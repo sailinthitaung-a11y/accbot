@@ -1,663 +1,868 @@
-import os
-import asyncio
-import threading
-import logging
-import requests
-import time
+# ====== IMPORTS ======
 from telethon import TelegramClient, events
-from telethon.sessions import StringSession
-from telethon.utils import get_display_name
+from telethon.tl.types import ChannelParticipantsAdmins
+import asyncio
+import time
+import re
 from flask import Flask
-from pymongo import MongoClient
-from pymongo.errors import OperationFailure, ServerSelectionTimeoutError 
+from threading import Thread
+import os 
 
-# ==============================================================================
-# 1. Configuration & Setup
-# ==============================================================================
+# ====== API CONFIG ======
+api_id = 21308016
+api_hash = "9a483e059bcb0904e9f367418076091e"
 
-# Logging Configuration
-logging.basicConfig(format='[%(levelname) 5s/%(asctime)s] %(name)s: %(message)s',
-                    level=logging.WARNING)
+# ====== MAIN OWNER ======
+MAIN_OWNER = [7781882070,6543902488,7690724545]
 
-# --- Hardcoded Credentials (Replace with your actual data!) ---
-# ⚠️ REPLACE THESE WITH YOUR REAL VALUES!
-# API ID နှင့် API HASH ကို my.telegram.org မှ ရယူပါ
-API_ID = 21308016     
-API_HASH = "9a483e059bcb0904e9f367418076091e"    
-# OWNER ID တစ်ခုတည်းကိုသာ ထားရှိရပါမည် (Integer)
-OWNER_ID = 7781882070    
-# MongoDB Connection String
-MONGO_URI = "mongodb+srv://sailinthitaung_db_user:ZBEIl2SKHMFr8RPw@accbot.lidtexj.mongodb.net/?retryWrites=true&w=majority&appName=accbot"
+# ====== AUTO REPLIES ======
+# (NOTE: The auto_replies list remains fully intact as provided by the user.)
+auto_replies = [
+     "ဖာသည်မသားမင်းမေစောက်ဖုတ်လီးနဲ့ကလိလဲလီးတောင်ချင်စရာမကောင်းလိုက်တာကွာ😂✌️",
+        "ခွေးမသားသတ္တိရှိရင်မင်းအမေဖာသည်မကိုအော်ဆဲပြလိုက်ပါလား😂✌️",
+        "ငါလိုးမသားလီးလုပ်နေတာလားပျင်းစရာကောင်းလိုက်တာ😂✌️",
+        "ကိုမေကိုလိုးစောက်နုပြန်ဆဲလေငြိမ်ခံမနေနဲ့😂✌️",
+        "မအေလိုးမင်းမေစောက်ပက်လိမ်ဆွဲပစ်မယ်ကျေနပ်လား😂✌️",
+        "မင်းရဲ့ချစ်ရပါသောဖခင်ကြီးဖြစ်ချင်ပါတယ်မင်းမေပေးလိုးပါ😂✌️",
+        "မအေလိုးဝက်😂✌️",
+        "ဖာသည်မသားသေချာကိုက်😂✌️",
+        "ဒီလိုဆိုမင်းအမေဖာသည်မပဲ😂✌️",
+        "မအေလိုးကိုက်ထားဖာသည်မသားကြောင်ကြည့်မနေနဲ့😂✌️",
+        "ဘမောတဲ့ဘောမ ဝဠ်ကြွေးရွှိသမျှအောင့်အီးသာခံလိုက်😂✌️",
+        "သာဓုနှစ်ကြိမ်ခေါ်လိုက်ဘောမ မင်းကိုနောက်တစ်ကြိမ်ပေးမခေါ်ဘူးမင်းဒီဘဝဒီမျှဝဠ်ကြွေးရှိသမျှကုန်အောင်သာဆပ်😂✌️",
+        "မအေလိုးစောက်သခေါရပ်ကြည့်မနေနဲ့မင်းအမေငါတက်လိုးလိုက်မယ်😂✌️",
+        "မအေလိုးဝက်ကိုက်မှာသာကိုက်စကားပလ္လင်ခံမနေနဲ့နောက်ဆုံးမင်းဒီဘူတာပဲဆိုက်မှာ😂✌️",
+        "နှမလိုးဘောမကိုက်ဆိုကုန်းသာကိုက်နောက်အံကိုကြိတ်ထားရဲရဲသာကိုက်😂✌️",
+        "ဥုံဘောမငါ့အမိန့်နဲ့မင်းအမေဖာသည်မဖြစ်စေ😂✌️",
+        "မအေလိုးပေါက်စခေါင်းကိုငုံ့ထားမင်းကိုဆုံးမနေတာမင်းဆရာကံကြီးထိုက်မယ်😂✌️",
+        "နှမလိုးဖက်တီးမင်းအဖေဝက်ကြီးအပြင်သွားတုန်းမင်းအမေကိုခိုးလိုးပြစ်မယ်😂✌️",
+        "ပိုင်ရာဆိုင်ရာများငါ့အမိန့်နဲ့ဒီဖာသည်မသားအမေကိုချုပ်လိုးကြစမ်း😂✌️",
+        "ဟိတ်ကောင်စောက်ဝက်စောက်ခွက်ကိုခြောက်ချက်တိတိရိုက်ခံရမယ်😂✌️",
+        "မင်းအဖေမူးပြီးမင်းအမကိုတက်လိုးသွားဦးမယ်ကျပ်ကျပ်သတိထား😂✌️",
+    "၁၆၆၇မှာ Newtonက ပန်းသီးကျွေကျလို့ ကမ္ဘာမြေကြီးဆွဲအားရှိတယ်လို့ပြောခဲ့တာမဟုတ်ဘူး မင်းအမေကိုလိုးရင်း အလိုးကြမ်းတော့ မင်းအဖေဖာသည်မက ပန်းသီးပင်နဲ့ခေါင်းတိုက်မိပြီး ပန်းသီးကျွေကျလာတာ အဲဒါကို နယူးတန်က ဖုံးကွယ်ချင်တော့ ကမ္ဘာမြေကြီး ဆွဲအားရှိကြောင်း သက်သေပြခဲ့တာလို့ပြောတာ😂✌️",
+        "နယူးတန်ကပြောခဲ့တယ် မင်းအမေဖာသည်မတဲ့ အဲ့အချိန်မှာအိုင်းစတိုင်းကဖြေရှင်းချက်ပေးပီး မင်းအမေစောက်ဖုတ်မဲကြောင်းအတည်ပြုခဲ့တယ်၊ ကမ္ဘာကျော်သိပ္ပံပညာရှင်တွေစူးစမ်းရင်းမင်းအမေစောက်ပတ် black hole ထက်ကျယ်ကြောင်းအတည်ပြုခဲ့သည်😂✌️",
+        "မသိဘူး ကိုမေကိုလိုးလိုက်တပည့်မသိချင်ဘူးကွာ ကိုမေကိုဂျွမ်းပစ်လိုးလိုက်😂✌️",
+    "ဖာသည်မသားငါကလစ်ရင်မင်းစိတ်ထိခိုက်တယ်မလား ကလစ်တယ်ကွာဘာတတ်နိုင်သေးလဲ😂✌️",
+    "ငါလိုးမ အာပေးတူ ဆဲတာပျော့လိုက်တာ ထိထိမိမိဆဲလေ🤞😏",
+    "စောက်တောပိန်း🤞😳",
+    "စောက်ချိုးအခမဲ့ပြင်ပေးတယ်🤞😁",
+    "ကိုမေကိုလိုး ကြောက်ရင်ကြောက်တယ် လို့အခုကတည်းကပြော လျှော်ပေးမယ်🤞🥶",
+    "ကောင်းပြီ မင်းအမေဖာသည်မဖြစ်ပြီ🤞😂",
+    "တောင်းပန်ပါတယ်ကွာ မင်းအမေကိုလိုးမိတဲ့အတွက်🤞🥶",
+    "ဒီပုံစံအတိုင်းဆိုမင်းအမေဖာသည်မပဲဖြစ်ရမယ် 😂😂😂",
+    "ငါ့ကိုအာခံရင်မင်းအမေဖာသည်မဖြစ်စေ👉😂",
+    "မင်းလောင်နေတာလား👉😂 🤔",
+    "မင်းအမေကြက်မဆို👉😂 😂",
+    "ဟာတကယ်လား မင်းအမေဖာသည်မကြီးဆိုတာ👉😂 😁",
+    "ငါ့ကို ကြောက်ပါပြီလို့ ၃ကြိမ်ပြော လွတ်ပေးမယ်👉😂 😉",
+    "မင်းအမေသွားပြောလေ👉😂 😂",
+    "မင်းအားကိုးတဲ့ကောင်တွေ ငါ့ရှေ့ရောက်ရင် ဒူးထောက်လက်မြောက်ရတယ်👉😂 😁",
+    "မင်းအမေသွားပြောလေ👉😂 😂",
+    "မင်းဆရာငါ ကလစ်ရင်မင်းစိတ်ထိခိုက်တယ်မလား ကလစ်တယ်ကွာဘာတတ်နိုင်သေးလဲ👉😂",
+    "ရုပ်ဆိုးတဲ့ကောင်လေး👉😂 😂",
+    "ဟျောင့်ခွေး👉😂",
+    "ဟမင်းအဖေခွေးကြီးသေပြီပေါ့👉😂",
+    "ငါးပါးမှောက်နေပြီလား👉😂",
+    "ဖအေမြင်ရင်မင်းဘဲရုန်းကန်နေတာပါ👉😂",
+    "မင်းအစွယ်တုံးရီးနဲ့ ကိုက်လေ👉😂",
+    "မင်းအမေဖာသည် ဖြစ်တာမြင်ချင် ငါ့ကိုဆဲလေ🤞😁",
+    "အုံဖွမင်းအမေဖာသည်မ🫵😂",
+    "မင်းအမေလင်ကငါလေ👉😂",
+    "ကိုမေကိုလိုးလေး သတိထား🫵😂",
+    "ကောင်းပြီ မင်းအမေဖာသည်မကြီးပေါ့👉😂",
+    "နဂိုကတည်းကပျင်းနေတာ ကျေးဇူးပဲ အဆဲခံပေးလို🤞🤨",
+    "ငါလိုးမသား အိမ်ကအမေ ဆဲခိုင်းတောင်း မင်းထက် ကောင်းအုန်းမယ်🫵😂",
+    "ကောင်းပြီ မင်းအမေကိုလိုးတာ ငါပဲ👉😂",
+    "မင်းအဖေခွေးကြီးသွားပြောပါလား👉😂",
+    "ကိုမေကိုလိုး ဘယ်ထိခံမလည်း ငါ ကတော့မသေမချင်း👉😂",
+    "ဟ မင်းအမေကိုလိုးတာငါပေါ့🤞😜",
+    "ငါဆရာကံကြမ္မာငင် သွားမယ်မှတ်👉😂",
+    "မင်းအမေကိုလိုးတာငါပဲ🤞😂",
+    "တောင်းပန်ပါတယ်ကွာ မင်းအမေကိုလိုးမိတဲ့အတွက်🤞🥶",
+    "ဒေါသတွေထွက်ပြီးငယ်ထိပ်ကြီနီလာပါလားဘယ်လိုလည်းဘောမ စိတ်အတော်ညစ်ပြီးအပေါသွေးအောက်သွေးမမျှတောဘူးလား😂👈😏",
+    "မင်းအမေဖာသည်မလားကောင်းပြီ😂🫵",
+        "မသိချင်ဘူးဆက်တိုက်ကိုက်😂✌️",
+        "အတာမင်းမေစပဖြစ်တာလား😂👈",
+        "ဆဲရင်ခံခိုင်းရင်လုပ်😂✌️",
+        "ဖက်ဆစ်နိုင်တယ်အဲ့တော့လီးဖြစ်သလား😂👌",
+        "တပည့်သေမယ်😂🫵",
+        "ဟျောင့်ခွေး အစွယ်ကောင်းနေတာလား😂✌️",
+        "မင်းအမေဖာသည်မဆိုတာတစ်ကယ်လား😂👈",
+        "ဖာသည်မသား😂👌",
+        "မင်းအမေပိပိ😂🫵",
+        "မအေလိုးစောက်ရူး လည်တော့လည်တယ်မင်းတစ်ပတ်မပြည့်ဘူး😂✌️",
+        "မင်းအမေကိုဖက်ဆစ်ကဆရာတွေဝိုင်းလိုးမိလား😂👌",
+        "ငါလိုးမစောက်ရူးကူကယ်ရာမဲ့ပြနေတာလားမင်းစကားဝိုင်းရဲ့အလယ်မှာသိမ်ငယ်နေရပြိလား😂👈",
+        "မအေလိုးဘောမ မင်းဘောမတောထဲကမထွက်ဘူးလားစောက်ခွေး😂🫵",
+        "စောက်တောသားမင်းမေဖာသည်မဆက်ဖြစ်နေမှာ ဧကန်မုချဘဲ😂✌️",
+        "မင်းအဖေဆိုတဲ့ကောင်ပါပေးတယ်သားပေါက်",
+        "စောက်ငနုလိုကောင် နိုင်အောင်ကိုက်လေ",
+        "မင်းအမေလိုအထန်မကိုပိုင်ဆိုင်ရတဲ့မင်းအတွက်ဂုဏ်ယူတယ်",
+        "ဖာသည်မသားမင်းဘယ်လိုနိုင်မှာလဲမင်းယှဉ်ဆဲနေတာသခင်သန်းဝေယံနိုင်လေ",
+        "ငါ့အမိန့်မရပဲဘာကိုနားချင်တာလဲခွေးမသားမျိုး",
+        "ဟျောင်နှမလိုးကျပ်မပြည့် ငါ့ဖွားတော်နဲ့ကော နပန်းလုံးမလား",
+        "ဟေ့ရောင်ဖာသည်မသားငါလီးကြီးကိုမင်းအမေအဖုတ်ထဲစိမ်လိုက်ရမလား",
+        "ကလစ်လေကလေဘာလို့နားနေတာလဲလက်ညောင်းသွားလို့လား",
+        "ခွေးမသားလေးကလဲမင်းစောက်သုံးကျတာဘာရှိလဲငါတို့တော့မင်းအမေဖီးလ်လာအောင်ကောင်းလိုးတတ်တာနဲ့တင်မင်းထက်သာနေပြီ",
+        "စောက်ရူးမသားလေး‌လာကိုက်လေဘာလိုဂျောင်ထဲမာမာန်ဖီနေရတာလဲ",
+        "ဟေ့ရောင်ဖာသည်မသားလေး မောနေပြီလား ပေးမနားနိုင်ဘူးကိုက်ထား",
+        "ဖာသည်မသားလေးကိုက်စရာရှိကိုက်ပါဟ ဘယ်ငေးနေတာလည်း",
+        "မင်းအမေစဖုတ်ဘာလို့မဲတာလည်း အဖြေရှာမရဖြစ်နေတာလား",
+        "မင်းအမေကိုစောက်ဖုတ်အမဲရောင်ကနေအနီရောင်ပြောင်းသွားအောင်တီးထုတ်ပေးလိုက်ရမလား",
+        "မအေလိုးဘောမ သန်းဝေယံနိုင်ဆိုတာနဲ့တင်မင်းကြောက်နေတာလား",
+        "မင်းလိုစောက်သုံးမကျတဲ့ကောင်ဖက်ဆစ်ထဲမှာရှိရင်ကျွန်လိုခိုင်းစားပစ်လိုက်ပြီ",
+        "မအေလိုးဘာဖြစ်တာလဲငါကအထှာကျ‌လွန်းတော့မင်းငါ့ပုံစံကော်ပီဖို့အကြံထုတ်နေတာလား",
+        "ခွေးမသားလေးကိုက်ထားလေးဘာအားလျှော့ချင်တာလဲနိုင်ချင်ရင်ကိုက်ဒါမယ့်မင်းမနိုင်ဘူး",
+        "အေ့တပည့်ရဲ့မင်းဆရာကငါပဲဘာဖြစ်လို့လဲခွေးမသားကိုက်ထားလေ",
+        "မင်းစာရိုက်နေတာလား ငါဖုန်းထဲမှာခွေးလေး‌ရေးထားသလို့ပဲဟ",
+        "ဖာသည်မသားညံ့ချက်ပါလားလူကနုံချာချာနဲ့အပျင်းမပြေလိုက်တာကွာ",
+        "မအေလိုးရေဝေးဝေးကဟောင်မင်းဆီကဘောဆော်နံတယ်",
+        "မင်းအမေကြီးလမ်းမှာခွေးတစ်ကောင်နဲ့မိတ်လိုက်နေတာငါတွေ့လိုက်တယ်",
+        "ဟေ့ရောင်ဈေးမရတဲ့ဖာသည်မသားကိုက်လေဘယ်ငေးတာလဲ",
+        "မင်းအမေဖာသည်မဆိုတာမင်းမပြောလဲငါသိပါတယ်",
+        "ဖက်ဆစ်ကိုနိုင်ချင်ရင်ဆုတောင်းလေငနဲရပူဖောင်းကြီးကြီးရလိမ့်မယ်",
+        "မအေလိုးလေးငါ့အထှာခိုးဖို့မကျန်နဲ့မင်းနဲ့မလိုက်ဖက်ဘူး",
+        "ခွေးမသားမင်းအမေကိုလေချွန်ပြီးလိုးလိုက်ရမလား",
+        "ဟေမအေလိုးဘောမကိုက်လေကွဘာကြောင်ကြည့်နေတာလဲ",
+        "စက္ကန့်နဲ့အမျှထွက်လာတဲ့ငါ့နဲ့flowတွေကြောင့်မင်းကြောက်စိတ်ဝင်နေပလား",
+        "မအေလိုးမင်းအမေဖာသည်မဆိုတာဝန်ခံပီလား",
+        "မင်းမှာလွတ်လမ်းမရှိတော့ဘူးလာရာလမ်းအတိုင်းတည့်တည့်သွားရင်မင်းအမေနဲ့ငါနဲ့ လိုးနေတာမြင်ရလိမ့်မယ်",
+        "စောက်ဝက်ကြီးဗြောင်လိမ်ဗြောင်စားလုပ်မယ်မကြံနဲ့မင်းအမေဖာသည်မ မဟုတ်လား",
+        "ဟေ့ရောင်မင်းအမေလိုးတဲ့အခါဘယ်လိုအော်လဲသိချင်ရင်မင်းစောက်ခွက်ကိုရှေ့ကပ်ထား",
+        "မင်းအမေကိုဦးနှောက်ပါပေါက်ထွက်သွားအောင်းပါးစပ်ပေါက်ထဲလီးထို့ထည့်မယ်",
+        "ဖာသည်မသားဖက်ဆစ်နိုင်ပြီလေဘာငြင်းချင်သေးတာလဲ",
+        "ဖက်ဆစ်ကိုနိုင်ချင်ရင်ငါ့ကိုအရင်ကျော်မှရမယ်ဒါမယ့်ဘယ်လိုမှမဖြစ်နိုင်ဘူးဆိုတာမင်းသိ",
+        "ငါ့ကိုယ်ထဲမှာရှိနေတဲ့ဖက်ဆစ်သွေးတွေနဲ့ဖာသည်မသွေးနဲ့အရောမခံနိုင်လို့မင်းအမေကိုမလိုးပဲလွှတ်ပေးလိုက်ပါပြီ",
+    "မင်းအမေမင်းမလိုးရင်မင်းအမေငါပဲလိုးတော့မယ်",
+    "မင်းမေ‌ေစာက်ပက်လားစောက်ဖာသည်မသား",
+    "ကိုမေကိုဘေးတစ်စောင်းလိုးမသား",
+    "မင်းမေမင်းလိုးတာလား",
+    "ကိုက်တာလားအဲ့တာ",
+    "ဖာသည်မသားလီးဖြစ်တာလား",
+    "မသိပါဘူးဘောမရာကိုက်လေ",
+    "ခ ခလေးငယ်ချစ်စဖွယ် မင်းအမေကိုအပျော်ကြံ",
+    "မင်းအမေသေလိုလားအဲ့တာ",
+    "မင်းမေလိုးဖြစ်တာလားခွေးမသား",
+    "မင်းအမေကိုချစ်တယ်ပြီးရင်လိုးမယ်",
+    "လီးစောင်းနဲ့ခုတ်ချလိုက်လိုခွေးမသား",
+    "မင်းအဖေဆိုတဲ့ကောင်ပါပေးတယ်သားပေါက်",
+    "စောက်ငနုလိုကောင် နိုင်အောင်ကိုက်လေ",
+    "မင်းအမေလိုအထန်မကိုပိုင်ဆိုင်ရတဲ့မင်းအတွက်ဂုဏ်ယူတယ်",
+    "ဖာသည်မသားမင်းဘယ်လိုနိုင်မှာလဲမင်းယှဉ်ဆဲနေတာဖက်ဆစ်Fdrလေ",
+    "ငါ့အမိန့်မရပဲဘာကိုနားချင်တာလဲခွေးမသားမျိုး",
+    "ဟျောင်နှမလိုးကျပ်မပြည့် ငါ့ဖွားတော်နဲ့ကော နပန်းလုံးမလား",
+    "ဟေ့ရောင်ဖာသည်မသားငါလီးကြီးကိုမင်းအမေအဖုတ်ထဲစိမ်လိုက်ရမလား",
+    "ကလစ်လေကလေဘာလို့နားနေတာလဲလက်ညောင်းသွားလို့လား",
+    "ခွေးမသားလေးကလဲမင်းစောက်သုံးကျတာဘာရှိလဲငါတို့တော့မင်းအမေဖီးလ်လာအောင်ကောင်းလိုးတတ်တာနဲ့တင်မင်းထက်သာနေပြီ",
+    "စောက်ရူးမသားလေး‌လာကိုက်လေဘာလိုဂျောင်ထဲမာမာန်ဖီနေရတာလဲ",
+    "ဟေ့ရောင်ဖာသည်မသားလေး မောနေပြီလား ပေးမနားနိုင်ဘူးကိုက်ထား",
+    "ဖာသည်မသားလေးကိုက်စရာရှိကိုက်ပါဟ ဘယ်ငေးနေတာလည်း",
+    "မင်းအမေစဖုတ်ဘာလို့မဲတာလည်း အဖြေရှာမရဖြစ်နေတာလား",
+    "မင်းအမေကိုစောက်ဖုတ်အမဲရောင်ကနေအနီရောင်ပြောင်းသွားအောင်တီးထုတ်ပေးလိုက်ရမလား",
+    "မအေလိုးဘောမ ဖက်ဆစ်‌‌Fdrဆိုတာနဲ့တင်မင်းကြောက်နေတာလား",
+    "မင်းလိုစောက်သုံးမကျတဲ့ကောင်ဖက်ဆစ်ထဲမှာရှိရင်ကျွန်လိုခိုင်းစားပစ်လိုက်ပြီ",
+    "မအေလိုးဘာဖြစ်တာလဲငါကအထှာကျ‌လွန်းတော့မင်းငါ့ပုံစံကော်ပီဖို့အကြံထုတ်နေတာလား",
+    "ခွေးမသားလေးကိုက်ထားလေးဘာအားလျှော့ချင်တာလဲနိုင်ချင်ရင်ကိုက်ဒါမယ့်မင်းမနိုင်ဘူး",
+    "အေ့တပည့်ရဲ့မင်းဆရာကငါပဲဘာဖြစ်လို့လဲခွေးမသားကိုက်ထားလေ",
+    "မင်းစာရိုက်နေတာလား ငါဖုန်းထဲမှာခွေးလေး‌ရေးထားသလို့ပဲဟ",
+    "ဖာသည်မသားညံ့ချက်ပါလားလူကနုံချာချာနဲ့အပျင်းမပြေလိုက်တာကွာ",
+    "မအေလိုးရေဝေးဝေးကဟောင်မင်းဆီကဘောဆော်နံတယ်",
+    "မင်းအမေကြီးလမ်းမှာခွေးတစ်ကောင်နဲ့မိတ်လိုက်နေတာငါတွေ့လိုက်တယ်",
+    "ဟေ့ရောင်ဈေးမရတဲ့ဖာသည်မသားကိုက်လေဘယ်ငေးတာလဲ",
+    "မင်းအမေဖာသည်မဆိုတာမင်းမပြောလဲငါသိပါတယ်",
+    "ဖက်ဆစ်ကိုနိုင်ချင်ရင်ဆုတောင်းလေငနဲရပူဖောင်းကြီးကြီးရလိမ့်မယ်",
+    "မအေလိုးလေးငါ့အထှာခိုးဖို့မကျန်နဲ့မင်းနဲ့မလိုက်ဖက်ဘူး",
+    "ခွေးမသားမင်းအမေကိုလေချွန်ပြီးလိုးလိုက်ရမလား",
+    "ဟေမအေလိုးဘောမကိုက်လေကွဘာကြောင်ကြည့်နေတာလဲ",
+    "စက္ကန့်နဲ့အမျှထွက်လာတဲ့ငါ့ရဲ့flowတွေကြောင့်မင်းကြောက်စိတ်ဝင်နေပလား",
+    "မအေလိုးမင်းအမေဖာသည်မဆိုတာဝန်ခံပီလား",
+    "မင်းမှာလွတ်လမ်းမရှိတော့ဘူးလာရာလမ်းအတိုင်းတည့်တည့်သွားရင်မင်းအမေနဲ့ငါနဲ့ လိုးနေတာမြင်ရလိမ့်မယ်",
+    "စောက်ဝက်ကြီးဗြောင်လိမ်ဗြောင်စားလုပ်မယ်မကြံနဲ့မင်းအမေဖာသည်မ မဟုတ်လား",
+    "ဟေ့ရောင်မင်းအမေလိုးတဲ့အခါဘယ်လိုအော်လဲသိချင်ရင်မင်းစောက်ခွက်ကိုရှေ့ကပ်ထား",
+    "မင်းအမေကိုဦးနှောက်ပါပေါက်ထွက်သွားအောင်းပါးစပ်ပေါက်ထဲလီးထို့ထည့်မယ်",
+    "ဖာသည်မသားဖက်ဆစ်နိုင်ပြီလေဘာငြင်းချင်သေးတာလဲ",
+    "ဖက်ဆစ်ကိုနိုင်ချင်ရင်ငါ့ကိုအရင်ကျော်မှရမယ်ဒါမယ့်ဘယ်လိုမှမဖြစ်နိုင်ဘူးဆိုတာမင်းသိ",
+    "ငါ့ကိုယ်ထဲမှာရှိနေတဲ့ဖက်ဆစ်သွေးတွေနဲ့ဖာသည်မသွေးနဲ့အရောမခံနိုင်လို့မင်းအမေကိုမလိုးပဲလွှတ်ပေးလိုက်ပါပြီ",
+    "ဟေ့ရောင်သေးသေးလေးမင်းမိဘတွေဆုံးပီလား",
+    "မင်းအိပ်နေတဲ့အချိန်မင်းအမေငါလိုးလိုက်မိပြီ",
+    "ကိုက်အားကောင်းတယ်မင်းအမေဖာသည်မ",
+    "မအေလိုးပေါက်စနကိုက်ထား",
+    "မအေလိုးမြှောက်ပေးရင်ဂွေးတက်အောင်မင်းအမေလိုးတာလား",
+    "ရောယောင်နေတဲ့ ပေါကြောင်မ",
+"ငါဘောထောင်ပြရင်စုတ်မလား",
+"ငနုက အောက်လုံးကရုန်းမထွက်နိုင်",
+"ဘာတွေလျှောက်ရေးနေတာ စောက်ရူးအကွပ်နက်",
+"မသက်တိုင်တာတွေလျှောက်ပြောပီး ကြမ်းတယ်ထင်ရင် ဖင်လှန်ထား",
+"ပန်းခြံမှာ နန်းစံအောင်လို့ကိုယ်ဖင်ကိုယ်လှန်ထောင်းနေ",
+"ဂလေဂချေကွာ ဖုန်းလေးတစ်လုံးရဟိုရေးဒီရေးရှောက်ရေးဟိုလုပ်ဒီလုပ်ရှောက်လုပ် ဖင်ကိုအသေမုန်းကြုံးပေးလိုက်ရ",
+"တိကျသေချာတဲ့ကြောင်းအရာကိုမပြောပဲ လျှောက်ဆဲနေတာစာမတတ်ရင် translate သုံးလေ",
+"အဲ့တာ ဦးနှောင်မရှိလို့ လိုက်ပြောနေလည်း မောတာပဲရှိနယ်",
+"သွေးရူးသွေးတန်းပတ်ဟောင်နေတယ်",
+"စကားတောင် ဖြစ်မြောက်အောင်မပြောနိုင်အဲ့တာနဲ့များ ဘယ်နားလူရာဝင်ချင်",
+"ဖြတ်ကန်လိုက်မယ်မအေလိုးဝမရှိပဲဝိမလုပ်နဲ့",
+"ယျောင်စက်ဘီးစောက်စုတ်စီးတဲ့ခွေးရေးလေ",
+"ရေတိမ်ရင်ကူးရခက်သလို အတွေးတိမ်ရင်တောသားမှန်းသိတယ်",
+"ငိုးမစောက်ကုလား မင်းဘုတ်နေတာလူမိပီ",
+"ထိရောက်မှုလဲမရှိဖြစ်ထွန်းမှုလဲမရှိ ညဏ်ရည်လဲမမှီ",
+"လီးနက်ပိတ်ရိုက်လိုက်လို့မအေဖင်ထဲပြန်ဝင်ချင်တာလား",
+"အလျင်မလိုနဲ့ ဖြေးဖြေးကိုက်",
+"သွားကြွတ်အောင်",
+"မင်းဆရာကိုယ်တိုင်ဆင်းရိုက်ပေးမယ်",
+"မင်းအမေကို အောက်ထပ်ကငရဲမင်းက မီးပူသံလျပ်နဲ့ တက်ထိုးတာ မင်းအမေသေနေပြီ",
+    "မင်းစောက်သုံးမကျလို့",
+    "မင်းအမေဝက်ကုလားတက်လိုးခံရပြီ စောက်သုံးမကျတဲ့ခွေး",
+    "ဖာခံမှ စားရတဲ့ငွေနဲ့",
+    "မင်းရိုက်နေတဲ့စာနဲ့",
+    "မအက်စပ်ဘူး ချီးပဲစားနေ",
+    "စောက်ခွက်ကိုကပ်တရာလမ်းမနဲမိတ်ဆက်ပေးရမှလား",
+    "ကိုမေကိုလိုးစောက်တောသား ၂၀၂၅ရောက်တာတောင်မင်းလိုကောင်ခေတ်နောက်ကျတုန်းလား",
+    "မင်းလိုကောင်ဆဲရတာ ရပ်ကွက်ထဲကလေးတစ်ယောက်စီကပါးရိုက်ပြီးမုန့်လုရတာထက်တောင်လွယ်နေသေးတယ်",
+    "ဟိတ်မင်းအမေသေပြီဖာသယ်မသား",
+    "လီးနက်ပိတ်ရိုက်လိုက်လို့မအေဖင်ထဲပြန်ဝင်ချင်တာလား",
+    "မအူအလည်ဖြစ်နေတာလား ကိုမေကိုလိုးစောက်ခြောက်",
+    "ငါလိုးမသားစောက်ခွက်က တစ်ရေးနိုးလို့ထကြည့်ရင်တောင် ၅ပြား မတန်ဘူး",
+    "skykingဆိုတာကြယ်တွေရဲ့အရှင်ပဲမင်းတို့မှတ်ထား",
+    "ဟုမ်းမိတ်ဆိုပြီး မင်းအမေကိုအမုန်းကြိတ်ပေးရမှလား",
+    "မအေလိုးကြက်ပေါက်စ ပိကျိပိကျိနဲ့မင်းဘာတွေအော်နေတာလဲ",
+    "မင်းစာဘယ်သူဖတ်လို့မင်းကဘာတွေလုရိုက်ချင်နေတာလဲ",
+    "ကိုမေကိုလိုးကတော့လီးတွေဝင်ဝင်ပြောနေတာလား",
+    "ဖာသည်မသားလီးဖြစ်လို့အော်နေတာလား",
+    "ခွန်းတုန့်မပြန်နဲ့ မင်းအဖေလိုတော့ခွင့်လွှတ်မှာမဟုတ်ဘူးဖာသည်မသား",
+    "မင်းလိုကောင်ငါ့တပည့်နဲ့ဆဲခိုင်းရင်တောင်မတန်ရာကျအုန်းမယ်",
+    "ဟုမ်းမိတ်ဆိုပြီး မင်းအမေကိုအမုန်းကြိတ်ပေးရမှလား",
+    "ကိုမေကိုလိုးကတော့လီးတွေဝင်ဝင်ပြောနေတာလား",
+    "မပြောချင်လို့ကြည့်နေတာအကောင်းမှတ်မနေနဲ ငါလိုးမခိုင်းခွေး",
+    "မင်းကိုနိုင်ဖို့ ငါ့ရဲ့ အင်အား 1% တောင်သုံးစရာမလိုဘူး",
+    "ဆဲရင်သေချာဆဲလေ မင်းစောက်ခြောက်လား နာနာဆဲပါဟ",
+    "ကို့စောက်ခွက် ကိုမှန်ထဲ ပြန်ကြိ ယောကျ်ား ကောဟူတ်ရဲ့ လားဆိုတာ လီးပါမှ ယောကျ်ား မဟူတ်ဘူး",
+    "telegram အင်ပါယာမင်းသားကိုသိလား",
+    "ဟျောင့်တောဝက်ကြီးဖြည်းကိုက်",
+    "မအေလိုးဝက်ကုလားမင်းသေမယ်",
+    "ဟိတ်ကောင် ခွေးမသားပိစိသေးသေးလေးပြေးထားကွ",
+    "မင်းအမေဖာသယ်မကြီးမနေ့ကဆုံးလိုဆို",
+    "သခင်PKလက်မြန်တာမင်းသိပြီလား",
+    "သခင်မလာတုန်းကလိုက်ကိုက်နေပြီးသခင်လာမှပြေးတာဘာအထာလဲကွ",
+    "ဟိတ်ကောင်ငနွားရုန်းထားစမ်း",
+    "မင်းဆရာPkကွဘာမှတ်နေလဲ",
+    "အေးPkတပဲ့လေးကိုမေကိုလိုးပလိုက်",
+    "ဘာတွေရှောက်ကြည့်နေတာဝင်ကိုက်ဘောမ",
+    "မင်းချေပမှုတွေကဒါအကုန်ပဲလားတပဲ့",
+    "မင်းချေပမှုတွေကငါအတွက်ရီစရာဖြစ်နေတယ်ဟ",
+    "ဘာလိုစာထပ်နေတာလဲပြန်ရေးစမ်း",
+    "ဘာလိုစာမှားနေတာလဲPkကြောက်ပြီးလက်တုန်ပြတာလား",
+    "ပွဲကြောက်တတ်ရင်ပွဲမရှာနဲ့လေအခုတော့အဆဲခံနေရပြီမှတ်လား",
+    "ကျွန်စုတ်လေးရေကူးတာလားရေငုတ်တာလားရေငတ်တာလား",
+    "မင်းအရမ်းကောင်းနေလဲဒုတိယပဲရမယ်ခွေးမသားလေး",
+    "မင်းလိုအဆင့်နိမ့်သတ္တာဝါကPkဆဲတာပဲခံစမ်း",
+    "ကလစ်လေကလေဘာလို့နားနေတာလဲလက်ညောင်းသွားလို့လား",
+    "ကလစ်ရင်မင်းမိဘလူတကာဝိုင်းလိုး",
+    "အေးတပဲ့မင်းအမေဖာသယ်မ",
+    "မင်းအမေဖာသယ်မကြီးနေမကောင်းလို့ဆုံးပြီဆို",
+    "မင်းမေဈာပနရှိလို့လိုင်းဆင်းပြေးတာလားကွ",
+    "ခွေးတိုးပေါက်ကနေဝင်လာပြီးခွေးတိုးပေါက်ပြေးတာမစမ်းပါဘူးဘောမရ",
+    "မင်းအားကိုးလိုရတဲ့ကောင်တွေပါအကုန်ပေးတယ်မင်းအဖေပါဆိုတဲ့ကောင်ပါထက်ပေးတယ်",
+    "ဘာလို့နှေးနေတာလဲလိပ်အိုမကြီးသားရ",
+    "ပြိုင်ပြောလေဘာလဲသခင်လေးPkနဲ့ယှဉ်မရိုက်နိုင်ဘူးလား",
+    "မင်းစာတွေကိုငါစာတွေဖုံးနေပြီမင်းဘယ်လိုလုပ်မလဲ",
+    "သခေါမသားမင်းအမေဘာလို့သွားခေါနေရတာ",
+    "မင်းမေဝက်မကြီးလူတကာလိုးလို့သေရတာဆို",
+    "ဟိတ်ကောငါဂျပုဘယ်ပြေးမှာလဲ",
+    "မင်းပြေးတိုင်းလွှတ်ပေးမယ်ထင်နေတာလားသခင်တွေလက်ကလွှတ်ချင်ရင်မင်းအမလာအလိုးခံ",
+    "ငယ်ကျွန်လေးသခင်တွေရှေ့မှာခစားစမ်း",
+    "ခွေးမသားပိစိလေးဘာလိုရှောက်ကိုက်နေရတာလဲ",
+    "ဒီဘိတ်မရလိုငိုတာဆိုငိုစမ်း",
+    "စောက်ရူးမသားလေးလာကိုက်လေဘာလိုဂျောင်ထဲမာမာန်ဖီနေရတာလဲ",
+    "ဘာလဲဂျောင်ထဲမာကပ်ငိုနေပီလား",
+    "မင်းအမေနာရေးရှိလို့ငေးမနေနနဲ့ဆက်ကိုက်ပလိုက်",
+    "ဆက်ကိုက်ငါခိုင်းတိုင်းလုပ်တဲ့ကောင်မင်းအမငါလိုး",
+    "ဘာလိုမဲမဲမြင်ရာရှောက်ကိုက်ရတာ",
+    "မင်းကသခင်တွေမရှိလိုတောင်ပြင်မှာလွှတ်နေတဲ့ခွေးရူးလေးတိုင်းပဲ",
+    "လိပ်အိုမကြီးနှေးမနေနဲ့ဆက်ကိုက်",
+    "အောက်ထစ်ကခွေးအအမြင့်ကသခင်တွေကိုပြန်ကိုက်ချင်နေတာလား",
+    "မင်းဘာလိုပိန်းတိန်းရတာမင်းအမေကပိန်းလို့မျိုးဆက်တူသွားတာလား",
+    "မင်းလက်ရေးမလှဘူးပြန်ရေးတပဲ့",
+    "မင်းစာတွေထက်မှားပြန်ပြီဘာလဲမင်းအမေပိုက်ဆံမလောက်လို့စာမသင်ပေးခဲ့ဘူးလား",
+    "ဆင်းရဲသားသဋေးသားတွေဆဲရင်ခံလေဘာလို့ပြန်တုချင်နေတာလဲ",
+    "မင်းအမေကဆင်းရဲလိုဈေးရောင်းနေရတာဆိုဈေးသားမသားလေး",
+    "သခင်တွေကလစ်ရင်မင်းမိဘမင်းလိုး",
+    "သခင်လေးPkကြမ်းတာမင်းသိပြီလားကွ",
+    "သခင်တွေဆီမာမျက်ရည်မျက်ခွပ်နဲ့လာသနားမခံနဲ့ကြက်ဖသခင်တွေကသနားမယ်ထင်လား",
+    "ငိုပြမနေနဲ့မင်းအမေဖာသယ်မကြီးသေမှငိုပလိုက်",
+    "မင်းအဖေဆိုတဲ့ကောင်ပါပေးတယ်သားပေါက်",
+    "တောသီးမင်းကိုအကြော့ပေးရမလား",
+    "လွယ်လိုက်တာကွာအနိုင်ယူမိပြန်ပီ",
+    "ဟက်ကလစ်ခွေးမင်းကလစ်ကြီးကနှေးကွေးနေတာဘဲTypingဆိုရင်တော့လိပ်ဂွင်းထုမှပြီးမယ့်ကောင်",
+    "မင်းဖေ စာတွေမြန်သွားလို့ လိုက်မမှီတော့ဘူးလား",
+    "မင်းစောက်သုံးကျသလားဝက်မင်းဘဝကအာမထုရင်းနဲ့အဆုံးသတ်သွားမလား",
+    "ဟက်ကလစ်ခွေးမင်းကလစ်ကြီးကနှေးကွေးနေတာဘဲTypingဆိုရင်တော့လိပ်ဂွင်းထုမှပြီးမယ့်ကောင်",
+    "ကိုမေကိုလိုးလေး စောက်ခွက်ပိတ်ကန်လိုက်မယ်",
+    "စောက်ဆင့်မရှိပဲပြန်ကန်တာဟုတ်လား",
+    "ဘာငိုရမှာလဲမင်းအမေသေလို့ငိုရမာလား",
+    "မင်းမာဖုန်းစုတ်လေးပြင်ပီးမှငါနဲ့  ယှဥ်ငတိရ",
+    "မင်းငါ့စကေးကြောင့်လက်တုန်နေပီရေသောက်ပီမှပြန်ရိုက်မယ်",
+    "ဘာတွေရှင်းပြချင်တာ မင်းမေဈပနအတွက်ပိုက်ဆံမလောက်လို့လား",
+    "မှော်ဆန်တဲ့ရိုက်ချက်တွေကြားအလူလဲခံနေရပြီလားဖာသည်မသား",
+    "ဘာတွေဟောင်ပြနေတာ ခွေး ဆက်ကိုက်လေ",
+    "ငါဆဲတာမမှတ်လို့ လာအဆဲခံတာလား",
+    "ငါ့အမိန့်မရပဲဘာကိုနားချင်တာလဲခွေးမသားမျိုး",
+    "စောက်ရူးမသား မွေးလာကတည်းကကျပ်မပြည့်တာဆို",
+    "ဘာတွေရိုက်ပြနေတာလဲ ဝက်မ ဆက်ရိုက်ထား နားရင်သေမယ်",
+    "ဆင်းရဲသားလေးမင်းအမေကဖာသယ်မလုပ်ပီးရှာကျွေးနေတာဆို",
+    "တောသား အညာသူမသားတတ်နေလား တတ်နေရင်မင်းမေကျွန်မထက်လိုးပြ",
+    "မေလိုးစာကမှားသေး ငါနဲ့ယှဉ်ရိုက်ရလို့လက်တုန်နေတာလာ အေးတပံ ဆျာခွင့်လွှတ်တယ် စာရိုက်ရလို့လက်နာနေတာလား နာနေတဲ့လက်မင်းမေဖင်ထဲထိုးထည့်",
+    "မင်းစာရိုက်နေတာလား ငါဖုန်းထဲမှာခွေးလေးရေးထားသလို့ပဲဟ",
+    "စောက်ပိန်းဖစ်ထွန်းမရှိပဲနဲ့ငါတို့နဲ့ယှဉ်ချင်တာလာ"
+]
 
-# --- Environment Variable Fallbacks (for Render URL/Session) ---
-# Environment Variable မှ SESSION_STRING ကို ယူသည်
-SESSION_STRING = os.environ.get("BOT_SESSION", None) 
-RENDER_URL = os.environ.get("RENDER_URL", "http://localhost:5000")
+# ====== VARIABLES ======
+targets = {}            # For Auto Reply
+auto_mentions = {}      # For Auto Mention
+auto_deletes = {}       # {chat_id: {user_id1, user_id2, ...}}
+mention_delay = 30      # default 30 seconds
+reply_index = 0
+mention_index = 0
+BOT_RUNNING = True      # Bot Status Control
 
-# --- Database Setup (MongoDB) ---
-try:
-    mongo_client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
-    mongo_client.server_info()
-    db = mongo_client["UserBotDB"]
+# ====== TELETHON CLIENT ======
+client = TelegramClient("userbot", api_id, api_hash)
+
+# ====== HELPERS ======
+def is_owner(user_id):
+    return user_id in MAIN_OWNER
+
+async def log_to_owner(msg):
+    """Sends log messages to all owners."""
+    print(msg)
+    for owner_id in MAIN_OWNER:
+        try:
+            # Only send detailed logs privately, but only if the user is not the bot itself
+            if owner_id != client.get_me().id: 
+                await client.send_message(owner_id, f"🪵 {msg}")
+        except:
+            pass
+
+async def show_typing(chat_id, duration):
+    """Shows the 'typing' action in the chat for a duration."""
+    start = time.time()
+    while time.time() - start < duration:
+        try:
+            async with client.action(chat_id, 'typing'):
+                await asyncio.sleep(3)
+        except Exception as e:
+            print(f"[TypingError] {e}")
+            break
+
+# ----------------------------------------------------------------------
+#                         OWNER ONLY COMMANDS (SILENT MODE)
+# ----------------------------------------------------------------------
+
+# ----------------------------------------------------------------------
+# BOT CONTROL
+# ----------------------------------------------------------------------
+@client.on(events.NewMessage(pattern=r"^/stopbot$"))
+async def stop_bot_handler(event):
+    global BOT_RUNNING
+    sender = await event.get_sender()
+    if not is_owner(sender.id):
+        return # Silent fail for non-owners
     
-    # Collections for persistence
-    reply_collection = db["auto_replies"]
-    data_collection = db["bot_data"]
-    admin_collection = db["admin_users"] 
+    BOT_RUNNING = False
+    await log_to_owner("🔴 Bot is stopping...")
+    # Stop the client after a short delay
+    await asyncio.sleep(1)
+    await client.disconnect()
+
+@client.on(events.NewMessage(pattern=r"^/startbot$"))
+async def start_bot_handler(event):
+    global BOT_RUNNING
+    sender = await event.get_sender()
+    if not is_owner(sender.id):
+        return # Silent fail for non-owners
     
-    logging.warning("✅ MongoDB Connection Successful.")
-except ServerSelectionTimeoutError: 
-    logging.error("❌ MongoDB Connection Failed. Check MONGO_URI and network access.")
-    exit(1)
-except Exception as e:
-    logging.error(f"❌ MongoDB initialization error: {e}")
-    exit(1)
+    if not BOT_RUNNING:
+        BOT_RUNNING = True
+        # Restarting the client requires a full re-run, so we just log the status change.
+        await log_to_owner("🟢 Bot status changed to RUNNING. (Requires manual restart if fully disconnected)")
+    else:
+        await log_to_owner("⚠️ Bot is already running.") 
 
-# --- Global Data Storage (In-memory cache for quick access) ---
-AUTO_REPLIES = {}  
-AUTO_DELETE_USERS = {}  
-AUTO_MENTION_USERS = {}  
-EXISTING_REPLY_TARGETS = {}  
-ADMIN_IDS = set() 
-MENTION_INTERVAL = 300
-IS_BOT_RUNNING = True
-
-# --- Telethon Client Setup (BOT_SESSION ERROR FIX) ---
-if SESSION_STRING:
-    # BOT_SESSION string အား မှန်ကန်ကြောင်း သေချာမှ StringSession ကို သုံးရန်
-    # StringSession() သည် တရားဝင် string မဟုတ်ပါက ValueError ဖြစ်သည်
-    try:
-        client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
-    except ValueError:
-        logging.error("❌ BOT_SESSION is invalid or corrupted. Starting with a new session file.")
-        client = TelegramClient("userbot_session", API_ID, API_HASH)
-        SESSION_STRING = None # အောက်က main() မှာ session အသစ်ထုတ်ဖို့ ပြန်သတ်မှတ်
-else:
-    # BOT_SESSION မရှိပါက userbot_session.session ကို သုံးရန်
-    client = TelegramClient("userbot_session", API_ID, API_HASH)
-
-# ==============================================================================
-# 2. Database (Persistence) Functions
-# ==============================================================================
-
-def load_data_from_db():
-    """Loads all data (Replies, Admin list, and other config) from MongoDB."""
-    global AUTO_REPLIES, AUTO_DELETE_USERS, AUTO_MENTION_USERS, EXISTING_REPLY_TARGETS, MENTION_INTERVAL, IS_BOT_RUNNING, ADMIN_IDS
-    
-    # Load Admin IDs 
-    try:
-        admin_data = admin_collection.find()
-        ADMIN_IDS = {doc['user_id'] for doc in admin_data}
-        logging.warning(f"👑 Loaded {len(ADMIN_IDS)} admin IDs.")
-    except Exception as e:
-        logging.error(f"Failed to load ADMIN_IDS: {e}")
-
-    # Load Auto Replies
-    try:
-        data = reply_collection.find()
-        AUTO_REPLIES = {doc['trigger']: doc['reply'] for doc in data}
-        logging.warning(f"🤖 Loaded {len(AUTO_REPLIES)} auto-replies.")
-    except Exception as e:
-        logging.error(f"Failed to load AUTO_REPLIES: {e}")
-
-    # Load Global Bot Data (Mentions, Deletes, etc.)
-    try:
-        bot_data_doc = data_collection.find_one({'_id': 'global_data'})
-        if bot_data_doc:
-            AUTO_DELETE_USERS = bot_data_doc.get('auto_delete_users', {})
-            AUTO_MENTION_USERS = bot_data_doc.get('auto_mention_users', {})
-            EXISTING_REPLY_TARGETS = bot_data_doc.get('existing_reply_targets', {})
-            MENTION_INTERVAL = bot_data_doc.get('mention_interval', 300)
-            IS_BOT_RUNNING = bot_data_doc.get('is_bot_running', True)
-            logging.warning("⚙️ Loaded global bot configurations.")
-    except Exception as e:
-        logging.error(f"Failed to load global bot data: {e}")
-
-
-def save_global_data_to_db():
-    """Saves all current global data to MongoDB."""
-    global AUTO_DELETE_USERS, AUTO_MENTION_USERS, EXISTING_REPLY_TARGETS, MENTION_INTERVAL, IS_BOT_RUNNING
-    try:
-        data_collection.update_one(
-            {'_id': 'global_data'},
-            {'$set': {
-                'auto_delete_users': AUTO_DELETE_USERS,
-                'auto_mention_users': AUTO_MENTION_USERS,
-                'existing_reply_targets': EXISTING_REPLY_TARGETS,
-                'mention_interval': MENTION_INTERVAL,
-                'is_bot_running': IS_BOT_RUNNING
-            }},
-            upsert=True
-        )
-        logging.info("💾 Global bot configurations saved.")
-    except OperationFailure as e:
-        logging.error(f"Failed to save global bot data: {e}")
-
-
-def save_reply_to_db(trigger, reply):
-    """Adds a new auto-reply to MongoDB."""
-    try:
-        reply_collection.update_one(
-            {'trigger': trigger},
-            {'$set': {'reply': reply}},
-            upsert=True
-        )
-        AUTO_REPLIES[trigger] = reply
-        return True
-    except OperationFailure:
-        return False
-
-def remove_reply_from_db(trigger):
-    """Removes an auto-reply from MongoDB."""
-    try:
-        result = reply_collection.delete_one({'trigger': trigger})
-        if result.deleted_count > 0:
-            if trigger in AUTO_REPLIES:
-                del AUTO_REPLIES[trigger]
-            return True
-        return False
-    except OperationFailure:
-        return False
-
-# ==============================================================================
-# 3. Command Menu Helper
-# ==============================================================================
-
-COMMAND_MENU = """
-🚀 **Userbot Command Menu** 🚀
-
-**OWNER CONTROL (Owner Only):**
-• `/stopbot` - Bot ၏ လုပ်ဆောင်မှုများ ရပ်ဆိုင်းရန်။
-• `/startbot` - Bot လုပ်ဆောင်မှုများ ပြန်လည်စတင်ရန်။
-• `/add_admin <id>` - ID ဖြင့် Admin ထည့်ရန်။
-• `/remove_admin <id>` - ID ဖြင့် Admin ဖယ်ရန်။
-
-**ADMIN/OWNER ONLY:**
-• `/getid` - (Common)
-• `/help` - (Common)
-• `.addreply [trigger] | [reply]` - Auto-Reply အသစ် ထည့်/ပြင်ရန်။ (Syntax Warning ပြေလည်ရန် '\.' ကို ဖယ်လိုက်သည်)
-• `.delreply [trigger]` - Auto-Reply ဖျက်ရန်။
-• `.listreplies` - Auto-Reply စာရင်းကြည့်ရန်။
-• **AUTO-DELETE** commands: `.autodelete @user` / `.ကန်`
-• **AUTO-MENTION** commands: `.setmentioninterval` / `.stopmention`
-
-**COMMON (Everyone):**
-• `/getid` - သင့်ရဲ့ User ID နှင့် Chat ID ကို ရယူရန်။
-• `/help` - ဤ Menu ကို ပြသရန်။
-"""
-
-# ==============================================================================
-# 4. Telethon Event Handlers (Commands)
-# ==============================================================================
-
-def is_owner(event):
-    """Check if the sender is the OWNER_ID."""
-    return event.sender_id == OWNER_ID
-
-def is_admin_or_owner(event):
-    """Check if the sender is the OWNER_ID or an ADMIN_ID."""
-    return event.sender_id == OWNER_ID or event.sender_id in ADMIN_IDS
-
-# --- OWNER ONLY: Admin Management ---
-
-@client.on(events.NewMessage(pattern=r'(\.add_admin|\/add_admin) (\d+)', outgoing=True))
-async def add_admin_handler(event):
-    if not is_owner(event): return
-    
-    try:
-        new_admin_id = int(event.pattern_match.group(2))
+# ----------------------------------------------------------------------
+# COMMON COMMANDS (Owner Only)
+# ----------------------------------------------------------------------
+@client.on(events.NewMessage(pattern=r"^/getid$"))
+async def get_id_handler(event):
+    sender = await event.get_sender()
+    if not is_owner(sender.id):
+        return # Silent fail for non-owners
         
-        if new_admin_id == OWNER_ID:
-            await event.edit("❌ Owner ကို ထပ်ပြီး Admin ထည့်စရာ မလိုပါဘူး။")
-            return
-
-        if new_admin_id in ADMIN_IDS:
-            await event.edit(f"💡 User ID `{new_admin_id}` သည် Admin စာရင်းတွင် ရှိပြီးသား ဖြစ်ပါသည်။")
-            return
-            
-        # Add to DB
-        admin_collection.update_one(
-            {'user_id': new_admin_id},
-            {'$set': {'user_id': new_admin_id}},
-            upsert=True
-        )
-        # Add to memory
-        ADMIN_IDS.add(new_admin_id)
-        
-        await event.edit(f"✅ User ID `{new_admin_id}` ကို Admin စာရင်းသို့ ထည့်သွင်းလိုက်ပါသည်။")
-    except Exception as e:
-        logging.error(f"Add admin error: {e}")
-        await event.edit("❌ Error! Invalid format or database error. Use: `/add_admin <user_id>`")
-
-@client.on(events.NewMessage(pattern=r'(\.remove_admin|\/remove_admin) (\d+)', outgoing=True))
-async def remove_admin_handler(event):
-    if not is_owner(event): return
+    chat_id = event.chat_id
+    user_id = sender.id
     
-    try:
-        admin_to_remove = int(event.pattern_match.group(2))
+    reply_text = f"👤 User ID: `{user_id}`\n"
+    reply_text += f"💬 Chat ID: `{chat_id}`\n"
+    reply_text += f"Current Chat Title: {event.chat.title if event.chat else 'Private Chat'}"
+    
+    # Sends info only to owner's log
+    await log_to_owner(f"✅ Get ID executed in chat {chat_id}:\n{reply_text}")
 
-        if admin_to_remove == OWNER_ID:
-            await event.edit("❌ Owner ID ကို Admin စာရင်းမှ ဖယ်ရှားခွင့် မရှိပါ။")
-            return
-
-        if admin_to_remove not in ADMIN_IDS:
-            await event.edit(f"💡 User ID `{admin_to_remove}` သည် Admin စာရင်းတွင် မရှိပါ။")
-            return
-            
-        # Remove from DB
-        admin_collection.delete_one({'user_id': admin_to_remove})
-        # Remove from memory
-        ADMIN_IDS.remove(admin_to_remove)
-        
-        await event.edit(f"✅ User ID `{admin_to_remove}` ကို Admin စာရင်းမှ ဖယ်ရှားလိုက်ပါသည်။")
-    except Exception as e:
-        logging.error(f"Remove admin error: {e}")
-        await event.edit("❌ Error! Invalid format or database error. Use: `/remove_admin <user_id>`")
-
-# --- COMMON Commands (Everyone/Admin) ---
-
-@client.on(events.NewMessage(pattern=r'\.help|\/help', outgoing=True)) 
+@client.on(events.NewMessage(pattern=r"^/help$"))
 async def help_handler(event):
-    await event.edit(COMMAND_MENU)
+    sender = await event.get_sender()
+    if not is_owner(sender.id):
+        return # Silent fail for non-owners
+        
+    help_menu = """
+**🚀 Userbot Command Menu (Owner Only) 🚀**
 
-@client.on(events.NewMessage(pattern=r'\.getid|\/getid', outgoing=True)) 
-async def getid_handler(event):
-    user_id = event.sender_id
+**BOT CONTROL:**
+• `/stopbot` - Stop the bot.
+• `/startbot` - Resume bot activities.
+
+**COMMON:**
+• `/getid` - Get your User ID and the Chat ID.
+• `/help` - Display this menu (in log).
+
+**AUTO-DELETE:**
+• Reply with `/ကန်` to a user's message to enable auto-delete for them in this chat.
+• `/autodelete @user` - Enable auto-delete for specified user.
+• `/stopautodelete @user` - Disable auto-delete for that user.
+• `/stopautodelete` - Disable auto-delete for ALL users in this chat.
+
+**AUTO-MENTION:**
+• `/listmentions` - Show users currently being auto-mentioned in this chat (in log).
+• `/stopmention (reply)` - Stop auto-mention for a specific user.
+• `/stopmention` - Stop ALL auto-mentions in the current chat.
+• `/stopallmentions` - Stop ALL auto-mentions globally.
+• `/setmentioninterval [seconds]` - Set the mention interval (5-3600s).
+• *Original Command:* `123 ဖာသည်မသား [nickname]` (reply) - Add mention target.
+• *Original Command:* `သေပြီလား` - Stop all mentions in current chat.
+• *Original Command:* `/setsecmention [seconds]` - Set mention interval.
+
+**EXISTING AUTO-REPLY:**
+• **Start**: Reply with `ဟျောင့်ဝက်မကိုက်လေ` (or similar triggers) to a target message.
+• **Stop**: Reply with `သေလိုက်` to a target's message, or send it alone to clear all targets.
+"""
+    # Sends help menu only to owner's log
+    await log_to_owner(f"✅ Help command executed in chat {event.chat_id}.\n{help_menu}")
+
+# ----------------------------------------------------------------------
+# AUTO-DELETE IMPLEMENTATION
+# ----------------------------------------------------------------------
+# Listener for /ကန် (Reply)
+@client.on(events.NewMessage(pattern=r"^/ကန်$"))
+async def enable_autodelete_reply(event):
+    sender = await event.get_sender()
+    if not is_owner(sender.id):
+        return # Silent fail for non-owners
+
+    if event.is_reply:
+        reply_msg = await event.get_reply_message()
+        user_to_delete = await reply_msg.get_sender()
+        
+        chat_id = event.chat_id
+        user_id = user_to_delete.id
+
+        if chat_id not in auto_deletes:
+            auto_deletes[chat_id] = set()
+        
+        auto_deletes[chat_id].add(user_id)
+        
+        await log_to_owner(f"✅ [AutoDelete] Enabled for {user_id} in {chat_id} via /ကန်")
+
+    # Removed else reply for silent mode
+
+# Listener for /autodelete @user
+@client.on(events.NewMessage(pattern=r"^/autodelete\s+(@\w+|\d+)$"))
+async def enable_autodelete_mention(event):
+    sender = await event.get_sender()
+    if not is_owner(sender.id):
+        return # Silent fail for non-owners
+
+    match = re.match(r"^/autodelete\s+(@\w+|\d+)$", event.raw_text)
+    user_identifier = match.group(1)
+    
+    try:
+        user_entity = await client.get_entity(user_identifier)
+        user_id = user_entity.id
+        chat_id = event.chat_id
+
+        if chat_id not in auto_deletes:
+            auto_deletes[chat_id] = set()
+        
+        auto_deletes[chat_id].add(user_id)
+        
+        await log_to_owner(f"✅ [AutoDelete] Enabled for {user_id} in {chat_id} via mention/ID")
+
+    except Exception as e:
+        await log_to_owner(f"❌ [AutoDeleteError] Could not find user {user_identifier}: {e}")
+
+# Listener for /stopautodelete @user
+@client.on(events.NewMessage(pattern=r"^/stopautodelete\s+(@\w+|\d+)$"))
+async def disable_autodelete_mention(event):
+    sender = await event.get_sender()
+    if not is_owner(sender.id):
+        return # Silent fail for non-owners
+
+    match = re.match(r"^/stopautodelete\s+(@\w+|\d+)$", event.raw_text)
+    user_identifier = match.group(1)
+    chat_id = event.chat_id
+
+    try:
+        user_entity = await client.get_entity(user_identifier)
+        user_id = user_entity.id
+
+        if chat_id in auto_deletes and user_id in auto_deletes[chat_id]:
+            auto_deletes[chat_id].remove(user_id)
+            if not auto_deletes[chat_id]:
+                del auto_deletes[chat_id]
+
+            await log_to_owner(f"✅ [AutoDelete] DISABLED for user {user_id} in chat {chat_id}")
+        else:
+            await log_to_owner(f"⚠️ [AutoDelete] User {user_id} was not on the auto-delete list in chat {chat_id}.")
+
+    except Exception as e:
+        await log_to_owner(f"❌ [AutoDeleteError] Could not find user {user_identifier}: {e}")
+
+
+# Listener for /stopautodelete (All)
+@client.on(events.NewMessage(pattern=r"^/stopautodelete$"))
+async def disable_autodelete_all(event):
+    sender = await event.get_sender()
+    if not is_owner(sender.id):
+        return # Silent fail for non-owners
+    
+    chat_id = event.chat_id
+    if chat_id in auto_deletes:
+        del auto_deletes[chat_id]
+        await log_to_owner(f"🚫 [AutoDelete] DISABLED for ALL users in chat {chat_id}")
+    else:
+        await log_to_owner(f"⚠️ [AutoDelete] No active auto-delete users in chat {chat_id}.")
+
+# Message deletion logic (remains silent)
+@client.on(events.NewMessage)
+async def delete_target_message(event):
+    if not BOT_RUNNING:
+        return
+        
+    chat_id = event.chat_id
+    sender = await event.get_sender()
+    
+    if chat_id in auto_deletes and sender.id in auto_deletes[chat_id]:
+        try:
+            # Owners are immune to autodelete.
+            if is_owner(sender.id):
+                return
+            await event.delete()
+        except Exception as e:
+            await log_to_owner(f"❌ [DeleteError] Could not delete message from {sender.id} in {chat_id}: {e}")
+
+# ----------------------------------------------------------------------
+# AUTO-MENTION COMMANDS
+# ----------------------------------------------------------------------
+# Helper to check if a user is being auto-mentioned in a specific chat
+def is_user_mentioning(chat_id, user_id):
+    return chat_id in auto_mentions and user_id in auto_mentions[chat_id]
+
+@client.on(events.NewMessage(pattern=r"^/listmentions$"))
+async def list_mentions_handler(event):
+    sender = await event.get_sender()
+    if not is_owner(sender.id):
+        return # Silent fail for non-owners
+        
     chat_id = event.chat_id
     
-    reply_to_id = None
-    if event.is_reply:
-        replied_msg = await event.get_reply_message()
-        if replied_msg and replied_msg.sender:
-            reply_to_id = replied_msg.sender_id
-
-    text = f"👤 **Your User ID:** `{user_id}`\n"
-    text += f"💬 **Chat ID:** `{chat_id}`\n"
-    if reply_to_id:
-        text += f"🎯 **Replied User ID:** `{reply_to_id}`"
-        
-    await event.edit(text)
-
-# --- BOT CONTROL (Owner Only) ---
-
-@client.on(events.NewMessage(pattern=r'\.stopbot|\/stopbot', outgoing=True))
-async def stopbot_handler(event):
-    global IS_BOT_RUNNING
-    if not is_owner(event): return 
-    
-    IS_BOT_RUNNING = False
-    save_global_data_to_db()
-    await event.edit("🔴 **Bot activities temporarily suspended.** Use `/startbot` to resume.")
-    logging.warning("Bot activities suspended.")
-
-@client.on(events.NewMessage(pattern=r'\.startbot|\/startbot', outgoing=True))
-async def startbot_handler(event):
-    global IS_BOT_RUNNING
-    if not is_owner(event): return 
-    
-    IS_BOT_RUNNING = True
-    save_global_data_to_db()
-    await event.edit("🟢 **Bot activities resumed.**")
-    logging.warning("Bot activities resumed.")
-
-# --- PERSISTENT AUTO-REPLY COMMANDS (Admin/Owner) ---
-
-@client.on(events.NewMessage(pattern=r'\.addreply (.*) \| (.*)', outgoing=True))
-async def add_reply_handler(event):
-    if not is_admin_or_owner(event): return
-    
-    match = event.pattern_match.groups()
-    trigger = match[0].strip()
-    reply = match[1].strip()
-    
-    if save_reply_to_db(trigger, reply):
-        await event.edit(f"✅ **Auto-Reply Added/Updated!**\nTrigger: `{trigger}`\nReply: `{reply}`")
+    if chat_id in auto_mentions and auto_mentions[chat_id]:
+        mentions = "\n".join([f"• ID `{uid}` (Nickname: {nickname})" for uid, nickname in auto_mentions[chat_id].items()])
+        await log_to_owner(f"✅ [AutoMention] List for chat {chat_id}:\n{mentions}")
     else:
-        await event.edit("❌ **Error!** Could not save to Database.")
+        await log_to_owner(f"⚠️ [AutoMention] No users are currently set for auto-mention in chat {chat_id}.")
 
-@client.on(events.NewMessage(pattern=r'\.delreply (.*)', outgoing=True))
-async def delete_reply_handler(event):
-    if not is_admin_or_owner(event): return
-    
-    trigger = event.pattern_match.group(1).strip()
-    
-    if remove_reply_from_db(trigger):
-        await event.edit(f"🗑️ **Auto-Reply Deleted!**\nTrigger: `{trigger}`")
-    else:
-        await event.edit(f"❌ **Error!** Could not find or delete reply with trigger: `{trigger}`")
-
-@client.on(events.NewMessage(pattern=r'\.listreplies', outgoing=True))
-async def list_replies_handler(event):
-    if not is_admin_or_owner(event): return
-    
-    if not AUTO_REPLIES:
-        await event.edit("💡 No persistent auto-replies found in the database.")
-        return
-    
-    reply_list = ""
-    for i, (trigger, reply) in enumerate(AUTO_REPLIES.items()):
-        if i >= 10:
-            reply_list += "\n...(and more)"
-            break
-        reply_list += f"`{trigger}` -> `{reply[:30]}`...\n"
-        
-    await event.edit(f"📋 **Persistent Auto-Replies ({len(AUTO_REPLIES)} Total):**\n\n{reply_list}")
-
-# --- EXISTING AUTO-REPLY (TARGETING) COMMANDS (Admin/Owner) ---
-
-@client.on(events.NewMessage(pattern=r'ဟျောင့်ဝက်မကိုက်လေ', outgoing=True))
-async def existing_reply_start_handler(event):
-    if not is_admin_or_owner(event): return
-    
-    if event.is_reply:
-        replied_msg = await event.get_reply_message()
-        if replied_msg and replied_msg.sender:
-            target_user_id = replied_msg.sender_id
-            
-            triggers = ["ဟျောင့်ဝက်မကိုက်လေ", "ဘာလဲ", "ဘယ်လဲ"] 
-            EXISTING_REPLY_TARGETS[target_user_id] = triggers
-            save_global_data_to_db()
-            
-            await event.edit(f"🐷 **Existing Reply Target Set!** User ID: `{target_user_id}`\nTriggers: {', '.join(triggers)}")
-    else:
-        await event.edit("❌ Please reply to a message to set the target.")
-
-@client.on(events.NewMessage(pattern=r'သေလိုက်', outgoing=True))
-async def existing_reply_stop_handler(event):
-    if not is_admin_or_owner(event): return
-    
-    if event.is_reply:
-        replied_msg = await event.get_reply_message()
-        if replied_msg and replied_msg.sender and replied_msg.sender_id in EXISTING_REPLY_TARGETS:
-            target_user_id = replied_msg.sender_id
-            del EXISTING_REPLY_TARGETS[target_user_id]
-            save_global_data_to_db()
-            await event.edit(f"☠️ **Existing Reply Target Removed!** User ID: `{target_user_id}`")
-        else:
-            await event.edit("💡 That user was not a reply target.")
-    else:
-        EXISTING_REPLY_TARGETS.clear()
-        save_global_data_to_db()
-        await event.edit("🧹 **Existing Reply Targets Cleared** (Global).")
-
-# --- AUTO-DELETE COMMANDS (Admin/Owner) ---
-
-@client.on(events.NewMessage(pattern=r'(\.ကန်|\/ကန်)', outgoing=True))
-@client.on(events.NewMessage(pattern=r'(\.autodelete|\/autodelete)(?: @)?(\w+)?', outgoing=True))
-async def autodelete_add_handler(event):
-    if not is_admin_or_owner(event): return
-    
-    chat_id = str(event.chat_id)
-    target_user = None
-
-    if event.is_reply:
-        replied_msg = await event.get_reply_message()
-        if replied_msg and replied_msg.sender:
-            target_user = str(replied_msg.sender_id)
-    elif event.pattern_match.group(2):
-        try:
-            target_entity = await client.get_entity(event.pattern_match.group(2))
-            target_user = str(target_entity.id)
-        except Exception:
-            await event.edit("❌ User not found or invalid format.")
-            return
-
-    if target_user:
-        if chat_id not in AUTO_DELETE_USERS:
-            AUTO_DELETE_USERS[chat_id] = {}
-        
-        AUTO_DELETE_USERS[chat_id][target_user] = 0
-        save_global_data_to_db()
-        await event.edit(f"🗑️ **Auto-Delete Enabled** for user ID: `{target_user}` in this chat.")
-    else:
-        await event.edit("❌ Please reply to a user's message or use `/autodelete @username`.")
-
-
-@client.on(events.NewMessage(pattern=r'(\.stopautodelete|\/stopautodelete)(?: @)?(\w+)?', outgoing=True))
-async def autodelete_remove_handler(event):
-    if not is_admin_or_owner(event): return
-    
-    chat_id = str(event.chat_id)
-    target_user = None
-
-    if event.pattern_match.group(2):
-        try:
-            target_entity = await client.get_entity(event.pattern_match.group(2))
-            target_user = str(target_entity.id)
-        except Exception:
-            await event.edit("❌ User not found or invalid format.")
-            return
-
-    if target_user:
-        if chat_id in AUTO_DELETE_USERS and target_user in AUTO_DELETE_USERS[chat_id]:
-            del AUTO_DELETE_USERS[chat_id][target_user]
-            if not AUTO_DELETE_USERS[chat_id]:
-                del AUTO_DELETE_USERS[chat_id]
-            save_global_data_to_db()
-            await event.edit(f"✅ **Auto-Delete Disabled** for user ID: `{target_user}` in this chat.")
-        else:
-            await event.edit("💡 That user was not set for auto-delete in this chat.")
-    elif chat_id in AUTO_DELETE_USERS:
-        del AUTO_DELETE_USERS[chat_id]
-        save_global_data_to_db()
-        await event.edit("✅ **Auto-Delete Disabled** for ALL users in this chat.")
-    else:
-        await event.edit("💡 No auto-delete users found for this chat.")
-
-# --- AUTO-MENTION COMMANDS (Admin/Owner) ---
-
-@client.on(events.NewMessage(pattern=r'(\.setmentioninterval|\/setmentioninterval) (\d+)', outgoing=True))
-async def set_mention_interval_handler(event):
-    global MENTION_INTERVAL
-    if not is_admin_or_owner(event): return
-    
-    try:
-        seconds = int(event.pattern_match.group(2))
-        if 5 <= seconds <= 3600:
-            MENTION_INTERVAL = seconds
-            save_global_data_to_db()
-            await event.edit(f"⏱️ **Mention Interval set to {seconds} seconds.**")
-        else:
-            await event.edit("❌ Interval must be between 5 and 3600 seconds.")
-    except:
-        await event.edit("❌ Invalid format. Use: `/setmentioninterval [seconds]`")
-
-@client.on(events.NewMessage(pattern=r'\.stopallmentions|\/stopallmentions', outgoing=True))
-async def stop_all_mentions_global_handler(event):
-    global AUTO_MENTION_USERS
-    if not is_admin_or_owner(event): return
-    
-    AUTO_MENTION_USERS.clear()
-    save_global_data_to_db()
-    await event.edit("🛑 **Global Auto-Mention Stopped** (All Chats).")
-
-@client.on(events.NewMessage(pattern=r'(\.stopmention|\/stopmention)', outgoing=True))
+# /stopmention (reply and general)
+@client.on(events.NewMessage(pattern=r"^/stopmention$"))
 async def stop_mention_handler(event):
-    if not is_admin_or_owner(event): return
-    
-    chat_id = str(event.chat_id)
+    sender = await event.get_sender()
+    if not is_owner(sender.id):
+        return # Silent fail for non-owners
+
+    chat_id = event.chat_id
     
     if event.is_reply:
-        replied_msg = await event.get_reply_message()
-        if replied_msg and replied_msg.sender and chat_id in AUTO_MENTION_USERS and str(replied_msg.sender_id) in AUTO_MENTION_USERS[chat_id]:
-            del AUTO_MENTION_USERS[chat_id][str(replied_msg.sender_id)]
-            if not AUTO_MENTION_USERS[chat_id]:
-                del AUTO_MENTION_USERS[chat_id]
-            save_global_data_to_db()
-            await event.edit(f"✅ **Auto-Mention Stopped** for User ID: `{replied_msg.sender_id}` in this chat.")
+        # Case 1: Stop mention for a specific user (reply)
+        reply_msg = await event.get_reply_message()
+        user_to_stop = await reply_msg.get_sender()
+        user_id = user_to_stop.id
+
+        if is_user_mentioning(chat_id, user_id):
+            del auto_mentions[chat_id][user_id]
+            if not auto_mentions[chat_id]:
+                del auto_mentions[chat_id]
+            await log_to_owner(f"✅ [AutoMention] Stopped for {user_id} in {chat_id} via /stopmention (reply)")
         else:
-            await event.edit("💡 That user was not being auto-mentioned in this chat.")
-    elif chat_id in AUTO_MENTION_USERS:
-        del AUTO_MENTION_USERS[chat_id]
-        save_global_data_to_db()
-        await event.edit("✅ **Auto-Mention Stopped** for ALL users in this chat.")
+            await log_to_owner(f"⚠️ [AutoMention] User {user_id} is not currently being auto-mentioned here.")
     else:
-        await event.edit("💡 No users are currently being auto-mentioned in this chat.")
+        # Case 2: Stop all mentions in the current chat
+        if chat_id in auto_mentions and auto_mentions[chat_id]:
+            del auto_mentions[chat_id]
+            await log_to_owner(f"🚫 [AutoMention] ALL stopped in chat {chat_id} via /stopmention")
+        else:
+            await log_to_owner(f"⚠️ [AutoMention] No active auto-mentions in chat {chat_id}.")
 
-@client.on(events.NewMessage(pattern=r'\.listmentions|\/listmentions', outgoing=True))
-async def list_mentions_handler(event):
-    if not is_admin_or_owner(event): return
+# /stopallmentions (global)
+@client.on(events.NewMessage(pattern=r"^/stopallmentions$"))
+async def stop_all_mentions_handler(event):
+    sender = await event.get_sender()
+    if not is_owner(sender.id):
+        return # Silent fail for non-owners
+
+    global auto_mentions
+    if auto_mentions:
+        count = len(auto_mentions)
+        auto_mentions = {}
+        await log_to_owner(f"🚫 [AutoMention] ALL stopped globally. Cleared mentions from {count} chats.")
+    else:
+        await log_to_owner("⚠️ [AutoMention] No active auto-mentions globally.")
+
+# /setmentioninterval [seconds]
+@client.on(events.NewMessage(pattern=r"^/setmentioninterval\s+(\d+)$"))
+async def set_mention_interval_handler(event):
+    global mention_delay
+    sender = await event.get_sender()
+    if not is_owner(sender.id):
+        return # Silent fail for non-owners
     
-    chat_id = str(event.chat_id)
-    
-    if chat_id not in AUTO_MENTION_USERS or not AUTO_MENTION_USERS[chat_id]:
-        await event.edit("💡 No users are currently being auto-mentioned in this chat.")
+    match = re.match(r"^/setmentioninterval\s+(\d+)$", event.raw_text)
+    if match:
+        new_delay = int(match.group(1))
+        
+        if 5 <= new_delay <= 3600:
+            mention_delay = new_delay
+            await log_to_owner(f"✅ [AutoMention] Delay updated to {mention_delay} seconds.")
+        else:
+            await log_to_owner("⚠️ [AutoMention] Interval must be between 5 and 3600 seconds. Not changed.")
+
+# ----------------------------------------------------------------------
+# EXISTING AUTO-REPLY HANDLERS
+# ----------------------------------------------------------------------
+
+# ====== ADD AUTO REPLY TARGET (Original) ======
+@client.on(events.NewMessage(pattern=r"^(ဟျောင့်ဝက်မကိုက်လေ|မင်းပါဝင်ကိုက်|အဲတာဆိုကိုက်|နာနာကိုက်ပါလားဘောမ|ဟျောင့်ဘောမကိုက်လေ|ဟျောင့်ဝက်ပုသေချာကိုက်ထား)$"))
+async def add_target(event):
+    if not BOT_RUNNING: return
+    sender = await event.get_sender()
+    if not is_owner(sender.id):
+        return # Silent fail for non-owners
+        
+    if event.is_reply:
+        reply_msg = await event.get_reply_message()
+        user = await reply_msg.get_sender()
+        chat_id = event.chat_id
+        targets[user.id] = {"chat": chat_id, "last_msg": None, "last_replied": None}
+        await log_to_owner(f"✅ [+] Auto Reply Started for {user.first_name} ({user.id}) in chat {chat_id}")
+    # Removed else reply for silent mode
+
+# ====== STOP AUTO REPLY (Original) ======
+@client.on(events.NewMessage(pattern=r"^သေလိုက်$"))
+async def stop_target(event):
+    if not BOT_RUNNING: return
+    sender = await event.get_sender()
+    if not is_owner(sender.id):
+        return # Silent fail for non-owners
+        
+    if event.is_reply:
+        reply_msg = await event.get_reply_message()
+        user = await reply_msg.get_sender()
+        if user.id in targets:
+            del targets[user.id]
+            await log_to_owner(f"✅ [*] Stopped Auto Reply for {user.first_name} ({user.id})")
+        else:
+            await log_to_owner(f"⚠️ [*] User {user.id} not found in auto-reply targets.")
+    else:
+        # Send alone to clear all targets
+        targets.clear()
+        await log_to_owner("✅ [*] All Auto Reply Targets Cleared")
+
+# ====== CATCH TARGET MESSAGES (Original) ======
+@client.on(events.NewMessage)
+async def catch_target_message(event):
+    if not BOT_RUNNING: return
+    sender = await event.get_sender()
+    # Ignore messages from owners
+    if is_owner(sender.id):
         return
         
-    user_list = "👥 **Auto-Mention Users in this Chat:**\n\n"
-    for user_id_str in AUTO_MENTION_USERS[chat_id]:
-        user_id = int(user_id_str)
-        try:
-            user_entity = await client.get_entity(user_id)
-            user_name = get_display_name(user_entity)
-            user_list += f"- `{user_name}` (`{user_id}`)\n"
-        except Exception:
-            user_list += f"- Unknown User (`{user_id}`)\n"
+    if sender.id in targets:
+        targets[sender.id]["last_msg"] = event.message
+
+# ====== ADD AUTO MENTION (Original) ======
+@client.on(events.NewMessage)
+async def add_auto_mention(event):
+    if not BOT_RUNNING: return
+    sender = await event.get_sender()
+    if not is_owner(sender.id):
+        return # Silent fail for non-owners
+        
+    # Original trigger: "123 ဖာသည်မသား [nickname]" (on reply)
+    if event.is_reply and event.raw_text.startswith("123 ဖာသည်မသား"):
+        match = re.match(r"123 ဖာသည်မသား\s+(.+)", event.raw_text, re.DOTALL)
+        if match:
+            nickname = match.group(1).strip()
+            reply_msg = await event.get_reply_message()
+            user = await reply_msg.get_sender()
+            chat_id = event.chat_id
             
-    await event.edit(user_list)
+            if chat_id not in auto_mentions:
+                auto_mentions[chat_id] = {}
+            auto_mentions[chat_id][user.id] = nickname
+            await log_to_owner(f"✅ [+] Auto Mention Added: {nickname} ({user.id}) in chat {chat_id} (Original command)")
+        else:
+             await log_to_owner("⚠️ [AutoMention] Original add command used incorrectly. Needs nickname.")
 
-# ==============================================================================
-# 5. Core Logic Handlers (Auto Delete, Auto Reply, Auto Mention)
-# ==============================================================================
-
-@client.on(events.NewMessage(incoming=True))
-async def main_logic_handler(event):
-    if not IS_BOT_RUNNING:
-        return
-    
-    sender_id = event.sender_id
-    chat_id = str(event.chat_id)
-    
-    # 1. PERSISTENT AUTO-REPLY Logic
-    # Owner/Admin မဟုတ်သော Message များကိုသာ Reply ပြန်ရန်
-    if event.text in AUTO_REPLIES and sender_id != OWNER_ID and sender_id not in ADMIN_IDS:
-        await event.reply(AUTO_REPLIES[event.text])
-        logging.info(f"📤 Sent persistent auto-reply for: '{event.text}'")
-        return
-
-    # 2. AUTO-DELETE Logic
-    if chat_id in AUTO_DELETE_USERS and str(sender_id) in AUTO_DELETE_USERS[chat_id]:
-        # Owner/Admin မဟုတ်သော Message များကိုသာ Delete လုပ်ရန်
-        if sender_id != OWNER_ID and sender_id not in ADMIN_IDS:
-            try:
-                await event.delete()
-                AUTO_DELETE_USERS[chat_id][str(sender_id)] += 1
-                logging.info(f"🗑️ Deleted message from {sender_id} in chat {chat_id}.")
-                return
-            except Exception as e:
-                logging.error(f"Failed to delete message: {e}")
-
-    # 3. EXISTING AUTO-REPLY Logic
-    # Owner/Admin မဟုတ်သော Message များကိုသာ Reply ပြန်ရန်
-    if sender_id in EXISTING_REPLY_TARGETS and sender_id != OWNER_ID and sender_id not in ADMIN_IDS:
-        if event.text in EXISTING_REPLY_TARGETS[sender_id]:
-            try:
-                owner_name = get_display_name(await client.get_me())
-                await event.reply(f"ဟုတ်ကဲ့ပါ၊ ကျွန်တော် {owner_name} ကိုယ်စား ပြန်ဖြေပေးတာပါ။")
-                return
-            except Exception as e:
-                logging.error(f"Failed to send existing auto-reply: {e}")
-
-# ==============================================================================
-# 6. Background Tasks (Keep-Alive & Auto-Mention)
-# ==============================================================================
-
-async def background_mention_task():
-    """Background task to handle periodic auto-mentions."""
-    while True:
-        await asyncio.sleep(MENTION_INTERVAL)
+# ====== STOP AUTO MENTION (Original) ======
+@client.on(events.NewMessage(pattern=r"^သေပြီလား$"))
+async def stop_auto_mention_original(event):
+    if not BOT_RUNNING: return
+    sender = await event.get_sender()
+    if not is_owner(sender.id):
+        return # Silent fail for non-owners
         
-        if not IS_BOT_RUNNING:
+    chat_id = event.chat_id
+    if chat_id in auto_mentions and auto_mentions[chat_id]:
+        del auto_mentions[chat_id] # Clear the whole chat entry
+        await log_to_owner(f"✅ [x] Auto Mention stopped in chat {chat_id} (Original command)")
+    else:
+        await log_to_owner(f"⚠️ [AutoMention] No active mentions found in chat {chat_id}.")
+
+# ====== SET MENTION DELAY (Original) ======
+@client.on(events.NewMessage(pattern=r"^/setsecmention (\d+)$"))
+async def set_mention_delay_original(event):
+    global mention_delay
+    sender = await event.get_sender()
+    if not is_owner(sender.id):
+        return # Silent fail for non-owners
+        
+    match = re.match(r"^/setsecmention (\d+)$", event.raw_text)
+    if match:
+        new_delay = int(match.group(1))
+        if 5 <= new_delay <= 3600:
+            mention_delay = new_delay
+            await log_to_owner(f"✅ [AutoMention] Delay updated to {mention_delay} seconds (Original command)")
+        else:
+            await log_to_owner("⚠️ [AutoMention] Interval must be between 5 and 3600 seconds. Not changed.")
+
+# ----------------------------------------------------------------------
+# LOOP FUNCTIONS (No change needed here)
+# ----------------------------------------------------------------------
+
+# ====== AUTO REPLY LOOP ======
+async def auto_reply_loop():
+    global reply_index
+    while True:
+        if not BOT_RUNNING:
+            await asyncio.sleep(5)
             continue
             
-        current_time = time.time()
-        
-        save_global_data_to_db()
-
-        for chat_id_str, targets in list(AUTO_MENTION_USERS.items()):
-            chat_id = int(chat_id_str)
-            for user_id_str, last_mention_time in list(targets.items()):
-                user_id = int(user_id_str)
-                
-                if current_time - last_mention_time >= MENTION_INTERVAL:
+        try:
+            for uid, data in list(targets.items()):
+                if data["last_msg"] and (data["last_replied"] != data["last_msg"].id):
+                    
+                    # 1. Show Typing
+                    asyncio.create_task(show_typing(data["chat"], 5))
+                    
+                    if auto_replies:
+                        reply_text = auto_replies[reply_index]
+                        reply_index = (reply_index + 1) % len(auto_replies)
+                    else:
+                        reply_text = "🤖 Auto reply active!"
+                        
+                    # 2. Send Reply
                     try:
-                        user_entity = await client.get_entity(user_id)
-                        mention_handle = f"@{user_entity.username}" if user_entity.username else f"User ID: {user_id}"
-                        
-                        mention_text = f"🚨 {get_display_name(await client.get_me())} သည် {mention_handle} ကို သတိရနေပါသည်!"
-                        await client.send_message(chat_id, mention_text)
-                        
-                        AUTO_MENTION_USERS[chat_id_str][user_id_str] = current_time
-                        logging.info(f"🔔 Auto-mentioned user {user_id} in chat {chat_id}")
+                        await client.send_message(data["chat"], reply_text, reply_to=data["last_msg"].id)
+                        data["last_replied"] = data["last_msg"].id
+                    except Exception as send_e:
+                        await log_to_owner(f"❌ [AutoReplySendError] Failed to send to {uid} in {data['chat']}: {send_e}. Removing target.")
+                        del targets[uid]
+
+            await asyncio.sleep(1)
+        except Exception as e:
+            await log_to_owner(f"❌ [AutoReplyLoopError] {e}")
+            await asyncio.sleep(3)
+
+# ====== AUTO MENTION LOOP ======
+async def mention_loop():
+    global mention_index
+    while True:
+        if not BOT_RUNNING:
+            await asyncio.sleep(5)
+            continue
+
+        try:
+            for chat_id, users in list(auto_mentions.items()):
+                if not users:
+                    del auto_mentions[chat_id]
+                    continue
+
+                # 1. Show Typing
+                asyncio.create_task(show_typing(chat_id, 5))
+
+                lines = []
+                for uid, nickname in list(users.items()):
+                    
+                    if auto_replies:
+                        msg = auto_replies[mention_index]
+                        mention_index = (mention_index + 1) % len(auto_replies)
+                    else:
+                        msg = "👋 Hey!"
+
+                    try:
+                        user_entity = await client.get_entity(uid)
+                        mention_text = f"@{user_entity.username}" if getattr(user_entity, "username", None) else f"[{nickname}](tg://user?id={uid})"
                     except Exception as e:
-                        logging.error(f"Failed to auto-mention in chat {chat_id}: {e}")
-        
-        save_global_data_to_db()
+                        mention_text = f"[{nickname}](tg://user?id={uid})"
+                        await log_to_owner(f"❌ [MentionEntityError] Could not get entity for {uid}: {e}")
 
+                    lines.append(f"{mention_text}\n{msg}")
 
-app = Flask(__name__)
+                text = "\n\n".join(lines)
+                
+                # 2. Send Mention Message
+                try:
+                    await client.send_message(chat_id, text, parse_mode="markdown")
+                except Exception as send_e:
+                    await log_to_owner(f"❌ [MentionSendError] Failed to send in {chat_id}: {send_e}. Removing chat from mentions.")
+                    del auto_mentions[chat_id]
+
+            await asyncio.sleep(mention_delay)
+        except Exception as e:
+            await log_to_owner(f"❌ [MentionLoopError] {e}")
+            await asyncio.sleep(5)
+
+# ----------------------------------------------------------------------
+# FLASK KEEP ALIVE & MAIN EXECUTION (Updated for PORT environment variable)
+# ----------------------------------------------------------------------
+app = Flask('')
 
 @app.route('/')
 def home():
-    """Simple health check endpoint."""
-    return f"User Bot is running. Status: {'RUNNING' if IS_BOT_RUNNING else 'SUSPENDED'} | Persistence: MongoDB"
+    return "Userbot is alive ✅"
 
-def keep_alive():
-    """Periodically pings the RENDER_URL to prevent sleep."""
-    while True:
-        try:
-            # Check if RENDER_URL is actually set to prevent unnecessary errors
-            if RENDER_URL and RENDER_URL != "http://localhost:5000":
-                requests.get(RENDER_URL, timeout=10)
-                logging.warning("✅ Pinged self to stay alive")
-        except requests.exceptions.RequestException as e:
-            logging.error(f"❌ Ping failed: {e}")
-        time.sleep(300)
+def run_web():
+    # Use environment variable PORT or default to 5000 for cloud platforms
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host='0.0.0.0', port=port)
 
-def run_flask():
-    """Starts the Flask server in a separate thread."""
-    port = int(os.environ.get('PORT', 5000))  
-    app.run(host='0.0.0.0', port=port, debug=False)
+Thread(target=run_web).start()
 
-# ==============================================================================
-# 7. Main Execution Block
-# ==============================================================================
-
+# ====== MAIN ======
 async def main():
-    """The main entry point for the Telethon client."""
-    # Flask & Keep-Alive ကို Background မှာ စတင်
-    threading.Thread(target=run_flask).start()
-    threading.Thread(target=keep_alive).start()
-    
-    # Database မှ Data အားလုံးကို Load လုပ်ပါ
-    load_data_from_db()
-    
     await client.start()
-
-    # Session String မရှိသေးပါက အသစ် ထုတ်ပေးရန်
-    global SESSION_STRING # global SESSION_STRING ကို ပြန်စစ်ဆေးသည်
-    if not SESSION_STRING:
-        session_string = client.session.save()
-        
-        # OWNER_ID သည် Integer တစ်ခုတည်းသာဖြစ်၍ တိုက်ရိုက် ပို့နိုင်သည်
-        try:
-            await client.send_message(OWNER_ID, f"⚠️ **New Session String Generated!**\n\n`{session_string}`\n\n**Please save this string and update the `BOT_SESSION` Environment Variable for future restarts!**")
-            logging.warning(f"--- NEW SESSION STRING ---\n{session_string}\n--------------------------")
-        except Exception as e:
-            logging.error(f"Failed to send session string to OWNER_ID: {e}")
-            
-        SESSION_STRING = session_string # အသစ်ထုတ်လိုက်တဲ့ session ကို သိမ်းထားပါ
-
-    # Background Mention Task ကို စတင်
-    asyncio.create_task(background_mention_task())
-
-    await client.send_message(OWNER_ID, "✅ **Userbot Client Started Successfully!**\n\n**Data Persistence: MongoDB**")
-    logging.warning("🚀 Userbot is running and listening for events.")
-
+    await log_to_owner("✅ Userbot Started (Sequential Auto Reply + Auto Mention + New Features)")
+    asyncio.create_task(auto_reply_loop())
+    asyncio.create_task(mention_loop())
     await client.run_until_disconnected()
 
-if __name__ == '__main__':
+# Check if bot status is running before running main loop
+if BOT_RUNNING:
     try:
         asyncio.run(main())
     except Exception as e:
-        logging.error(f"An unexpected error occurred during startup: {e}")
+        print(f"Main execution failed: {e}")
