@@ -1,5 +1,5 @@
 telethon
 flask
 requests
-pymongo
-dnspython
+dnspython 
+pymongo==3.12.0
