@@ -9,7 +9,8 @@ from telethon.sessions import StringSession
 from telethon.utils import get_display_name
 from flask import Flask
 from pymongo import MongoClient
-from pymongo.errors import ConnectionError, OperationFailure
+# ConnectionError အစား ServerSelectionTimeoutError ကို သုံးလိုက်သည်
+from pymongo.errors import OperationFailure, ServerSelectionTimeoutError 
 
 # ==============================================================================
 # 1. Configuration & Setup
@@ -21,9 +22,10 @@ logging.basicConfig(format='[%(levelname) 5s/%(asctime)s] %(name)s: %(message)s'
 
 # --- Hardcoded Credentials (Replace with your actual data!) ---
 # ⚠️ REPLACE THESE WITH YOUR REAL VALUES!
-API_ID = 21308016      # <-- ဤနေရာတွင် သင့် API ID အမှန်ကို ထည့်ပါ
-API_HASH = "9a483e059bcb0904e9f367418076091e"   # <-- ဤနေရာတွင် သင့် API HASH အမှန်ကို ထည့်ပါ
-OWNER_ID = [7781882070,6543902488,7690724545]   # <-- ဤနေရာတွင် သင့် OWNER ID အမှန်ကို ထည့်ပါ
+API_ID = 21308016     # <-- ဤနေရာတွင် သင့် API ID အမှန်ကို ထည့်ပါ
+API_HASH = "9a483e059bcb0904e9f367418076091e"    # <-- ဤနေရာတွင် သင့် API HASH အမှန်ကို ထည့်ပါ
+# OWNER ID တစ်ခုတည်းကိုသာ ထားရှိရပါမည် (Integer)
+OWNER_ID = 7781882070    # <-- ဤနေရာတွင် သင့် OWNER ID အမှန်ကို ထည့်ပါ 
 MONGO_URI = "mongodb+srv://sailinthitaung_db_user:ZBEIl2SKHMFr8RPw@accbot.lidtexj.mongodb.net/?retryWrites=true&w=majority&appName=accbot"
 
 # --- Environment Variable Fallbacks (for Render URL/Session) ---
@@ -39,10 +41,11 @@ try:
     # Collections for persistence
     reply_collection = db["auto_replies"]
     data_collection = db["bot_data"]
-    admin_collection = db["admin_users"] # NEW: Admin Users Collection
+    admin_collection = db["admin_users"] 
     
     logging.warning("✅ MongoDB Connection Successful.")
-except ConnectionError:
+# ConnectionError အစား ServerSelectionTimeoutError ကို သုံးသည်
+except ServerSelectionTimeoutError: 
     logging.error("❌ MongoDB Connection Failed. Check MONGO_URI and network access.")
     exit(1)
 except Exception as e:
@@ -50,11 +53,11 @@ except Exception as e:
     exit(1)
 
 # --- Global Data Storage (In-memory cache for quick access) ---
-AUTO_REPLIES = {} 
-AUTO_DELETE_USERS = {} 
-AUTO_MENTION_USERS = {} 
-EXISTING_REPLY_TARGETS = {} 
-ADMIN_IDS = set() # NEW: Set of Admin IDs (excluding OWNER_ID)
+AUTO_REPLIES = {}  
+AUTO_DELETE_USERS = {}  
+AUTO_MENTION_USERS = {}  
+EXISTING_REPLY_TARGETS = {}  
+ADMIN_IDS = set() 
 MENTION_INTERVAL = 300
 IS_BOT_RUNNING = True
 
@@ -72,7 +75,7 @@ def load_data_from_db():
     """Loads all data (Replies, Admin list, and other config) from MongoDB."""
     global AUTO_REPLIES, AUTO_DELETE_USERS, AUTO_MENTION_USERS, EXISTING_REPLY_TARGETS, MENTION_INTERVAL, IS_BOT_RUNNING, ADMIN_IDS
     
-    # Load Admin IDs (NEW)
+    # Load Admin IDs 
     try:
         admin_data = admin_collection.find()
         # Ensure IDs are integers for proper comparison
@@ -158,18 +161,20 @@ COMMAND_MENU = """
 **OWNER CONTROL (Owner Only):**
 • `/stopbot` - Bot ၏ လုပ်ဆောင်မှုများ ရပ်ဆိုင်းရန်။
 • `/startbot` - Bot လုပ်ဆောင်မှုများ ပြန်လည်စတင်ရန်။
-• `/add_admin <id>` - ID ဖြင့် Admin ထည့်ရန်။
-• `/remove_admin <id>` - ID ဖြင့် Admin ဖယ်ရန်။
+• `/add_admin <id>` - ID ဖြင့် Admin ထည့်ရန်။
+• `/remove_admin <id>` - ID ဖြင့် Admin ဖယ်ရန်။
 
 **ADMIN/OWNER ONLY:**
 • `/getid` - (Common)
 • `/help` - (Common)
-• **AUTO-REPLY** commands.
+• `\.addreply [trigger] \| [reply]` - Auto-Reply အသစ် ထည့်/ပြင်ရန်။
+• `\.delreply [trigger]` - Auto-Reply ဖျက်ရန်။
+• `\.listreplies` - Auto-Reply စာရင်းကြည့်ရန်။
 • **AUTO-DELETE** commands.
 • **AUTO-MENTION** commands.
 
 **COMMON (Everyone):**
-• `/getid` - သင့်ရဲ့ User ID နှင့် Chat ID ကို ရယူရန်။
+• `/getid` - သင့်ရဲ့ User ID နှင့် Chat ID ကို ရယူရန်။
 • `/help` - ဤ Menu ကို ပြသရန်။
 """
 
@@ -243,14 +248,11 @@ async def remove_admin_handler(event):
 
 # --- COMMON Commands (Everyone/Admin) ---
 
-# We only check for is_owner here as these are COMMON commands, but if you want 
-# Admin-only access to /getid and /help, change `is_owner(event)` to `is_admin_or_owner(event)`
-# For now, keeping them accessible to everyone as per original request.
-@client.on(events.NewMessage(pattern=r'\.help|\/help'))
+@client.on(events.NewMessage(pattern=r'\.help|\/help', outgoing=True)) # outgoing=True ထည့်ထားသည်
 async def help_handler(event):
-    await event.reply(COMMAND_MENU)
+    await event.edit(COMMAND_MENU)
 
-@client.on(events.NewMessage(pattern=r'\.getid|\/getid'))
+@client.on(events.NewMessage(pattern=r'\.getid|\/getid', outgoing=True)) # outgoing=True ထည့်ထားသည်
 async def getid_handler(event):
     user_id = event.sender_id
     chat_id = event.chat_id
@@ -266,7 +268,7 @@ async def getid_handler(event):
     if reply_to_id:
         text += f"🎯 **Replied User ID:** `{reply_to_id}`"
         
-    await event.reply(text)
+    await event.edit(text)
 
 # --- BOT CONTROL (Owner Only) ---
 
@@ -291,11 +293,12 @@ async def startbot_handler(event):
     logging.warning("Bot activities resumed.")
 
 # --- PERSISTENT AUTO-REPLY COMMANDS (Admin/Owner) ---
+# **ယခု Commands များသည် is_admin_or_owner ဖြင့် စစ်ဆေးထားသည်**
 
 @client.on(events.NewMessage(pattern=r'\.addreply (.*) \| (.*)', outgoing=True))
 async def add_reply_handler(event):
     if not is_admin_or_owner(event): return
-    # ... (rest of the logic is the same) ...
+    
     match = event.pattern_match.groups()
     trigger = match[0].strip()
     reply = match[1].strip()
@@ -308,7 +311,7 @@ async def add_reply_handler(event):
 @client.on(events.NewMessage(pattern=r'\.delreply (.*)', outgoing=True))
 async def delete_reply_handler(event):
     if not is_admin_or_owner(event): return
-    # ... (rest of the logic is the same) ...
+    
     trigger = event.pattern_match.group(1).strip()
     
     if remove_reply_from_db(trigger):
@@ -319,7 +322,7 @@ async def delete_reply_handler(event):
 @client.on(events.NewMessage(pattern=r'\.listreplies', outgoing=True))
 async def list_replies_handler(event):
     if not is_admin_or_owner(event): return
-    # ... (rest of the logic is the same) ...
+    
     if not AUTO_REPLIES:
         await event.edit("💡 No persistent auto-replies found in the database.")
         return
@@ -338,7 +341,7 @@ async def list_replies_handler(event):
 @client.on(events.NewMessage(pattern=r'ဟျောင့်ဝက်မကိုက်လေ', outgoing=True))
 async def existing_reply_start_handler(event):
     if not is_admin_or_owner(event): return
-    # ... (rest of the logic is the same) ...
+    
     if event.is_reply:
         replied_msg = await event.get_reply_message()
         if replied_msg and replied_msg.sender:
@@ -355,7 +358,7 @@ async def existing_reply_start_handler(event):
 @client.on(events.NewMessage(pattern=r'သေလိုက်', outgoing=True))
 async def existing_reply_stop_handler(event):
     if not is_admin_or_owner(event): return
-    # ... (rest of the logic is the same) ...
+    
     if event.is_reply:
         replied_msg = await event.get_reply_message()
         if replied_msg and replied_msg.sender and replied_msg.sender_id in EXISTING_REPLY_TARGETS:
@@ -376,7 +379,7 @@ async def existing_reply_stop_handler(event):
 @client.on(events.NewMessage(pattern=r'(\.autodelete|\/autodelete)(?: @)?(\w+)?', outgoing=True))
 async def autodelete_add_handler(event):
     if not is_admin_or_owner(event): return
-    # ... (rest of the logic is the same) ...
+    
     chat_id = str(event.chat_id)
     target_user = None
 
@@ -406,7 +409,7 @@ async def autodelete_add_handler(event):
 @client.on(events.NewMessage(pattern=r'(\.stopautodelete|\/stopautodelete)(?: @)?(\w+)?', outgoing=True))
 async def autodelete_remove_handler(event):
     if not is_admin_or_owner(event): return
-    # ... (rest of the logic is the same) ...
+    
     chat_id = str(event.chat_id)
     target_user = None
 
@@ -422,7 +425,7 @@ async def autodelete_remove_handler(event):
         if chat_id in AUTO_DELETE_USERS and target_user in AUTO_DELETE_USERS[chat_id]:
             del AUTO_DELETE_USERS[chat_id][target_user]
             if not AUTO_DELETE_USERS[chat_id]:
-                 del AUTO_DELETE_USERS[chat_id]
+                del AUTO_DELETE_USERS[chat_id]
             save_global_data_to_db()
             await event.edit(f"✅ **Auto-Delete Disabled** for user ID: `{target_user}` in this chat.")
         else:
@@ -440,7 +443,7 @@ async def autodelete_remove_handler(event):
 async def set_mention_interval_handler(event):
     global MENTION_INTERVAL
     if not is_admin_or_owner(event): return
-    # ... (rest of the logic is the same) ...
+    
     try:
         seconds = int(event.pattern_match.group(2))
         if 5 <= seconds <= 3600:
@@ -456,7 +459,7 @@ async def set_mention_interval_handler(event):
 async def stop_all_mentions_global_handler(event):
     global AUTO_MENTION_USERS
     if not is_admin_or_owner(event): return
-    # ... (rest of the logic is the same) ...
+    
     AUTO_MENTION_USERS.clear()
     save_global_data_to_db()
     await event.edit("🛑 **Global Auto-Mention Stopped** (All Chats).")
@@ -464,7 +467,7 @@ async def stop_all_mentions_global_handler(event):
 @client.on(events.NewMessage(pattern=r'(\.stopmention|\/stopmention)', outgoing=True))
 async def stop_mention_handler(event):
     if not is_admin_or_owner(event): return
-    # ... (rest of the logic is the same) ...
+    
     chat_id = str(event.chat_id)
     
     if event.is_reply:
@@ -487,7 +490,7 @@ async def stop_mention_handler(event):
 @client.on(events.NewMessage(pattern=r'\.listmentions|\/listmentions', outgoing=True))
 async def list_mentions_handler(event):
     if not is_admin_or_owner(event): return
-    # ... (rest of the logic is the same) ...
+    
     chat_id = str(event.chat_id)
     
     if chat_id not in AUTO_MENTION_USERS or not AUTO_MENTION_USERS[chat_id]:
@@ -507,7 +510,7 @@ async def list_mentions_handler(event):
     await event.edit(user_list)
 
 # ==============================================================================
-# 5. Core Logic Handlers (Auto Delete, Auto Reply, Auto Mention) (No Change)
+# 5. Core Logic Handlers (Auto Delete, Auto Reply, Auto Mention)
 # ==============================================================================
 
 @client.on(events.NewMessage(incoming=True))
@@ -519,7 +522,7 @@ async def main_logic_handler(event):
     chat_id = str(event.chat_id)
     
     # 1. PERSISTENT AUTO-REPLY Logic
-    # Note: Only non-Owner/non-Admin messages will trigger this reply to prevent loops
+    # Owner/Admin မဟုတ်သော Message များကိုသာ Reply ပြန်ရန်
     if event.text in AUTO_REPLIES and sender_id != OWNER_ID and sender_id not in ADMIN_IDS:
         await event.reply(AUTO_REPLIES[event.text])
         logging.info(f"📤 Sent persistent auto-reply for: '{event.text}'")
@@ -527,6 +530,7 @@ async def main_logic_handler(event):
 
     # 2. AUTO-DELETE Logic
     if chat_id in AUTO_DELETE_USERS and str(sender_id) in AUTO_DELETE_USERS[chat_id]:
+        # Owner/Admin မဟုတ်သော Message များကိုသာ Delete လုပ်ရန်
         if sender_id != OWNER_ID and sender_id not in ADMIN_IDS:
             try:
                 await event.delete()
@@ -537,6 +541,7 @@ async def main_logic_handler(event):
                 logging.error(f"Failed to delete message: {e}")
 
     # 3. EXISTING AUTO-REPLY Logic
+    # Owner/Admin မဟုတ်သော Message များကိုသာ Reply ပြန်ရန်
     if sender_id in EXISTING_REPLY_TARGETS and sender_id != OWNER_ID and sender_id not in ADMIN_IDS:
         if event.text in EXISTING_REPLY_TARGETS[sender_id]:
             try:
@@ -547,7 +552,7 @@ async def main_logic_handler(event):
                 logging.error(f"Failed to send existing auto-reply: {e}")
 
 # ==============================================================================
-# 6. Background Tasks (Keep-Alive & Auto-Mention) (No Change)
+# 6. Background Tasks (Keep-Alive & Auto-Mention)
 # ==============================================================================
 
 async def background_mention_task():
@@ -602,7 +607,7 @@ def keep_alive():
 
 def run_flask():
     """Starts the Flask server in a separate thread."""
-    port = int(os.environ.get('PORT', 5000)) 
+    port = int(os.environ.get('PORT', 5000))  
     app.run(host='0.0.0.0', port=port, debug=False)
 
 # ==============================================================================
@@ -611,19 +616,22 @@ def run_flask():
 
 async def main():
     """The main entry point for the Telethon client."""
+    # Flask & Keep-Alive ကို Background မှာ စတင်
     threading.Thread(target=run_flask).start()
     threading.Thread(target=keep_alive).start()
     
-    # Load all data, including Admin IDs, before starting client
+    # Database မှ Data အားလုံးကို Load လုပ်ပါ
     load_data_from_db()
     
     await client.start()
 
     if not SESSION_STRING:
         session_string = client.session.save()
+        # OWNER_ID သည် Integer တစ်ခုတည်းသာဖြစ်၍ တိုက်ရိုက် ပို့နိုင်သည်
         await client.send_message(OWNER_ID, f"⚠️ **New Session String Generated!**\n\n`{session_string}`\n\n**Please save this string and update the `BOT_SESSION` Environment Variable for future restarts!**")
         logging.warning(f"--- NEW SESSION STRING ---\n{session_string}\n--------------------------")
 
+    # Background Mention Task ကို စတင်
     asyncio.create_task(background_mention_task())
 
     await client.send_message(OWNER_ID, "✅ **Userbot Client Started Successfully!**\n\n**Data Persistence: MongoDB**")
