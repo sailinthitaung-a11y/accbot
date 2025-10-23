@@ -1,3 +1,5 @@
-telethon==1.35.0
-Flask==3.0.3
+telethon
+flask
 requests
+pymongo
+dnspython
