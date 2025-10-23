@@ -336,7 +336,8 @@ async def log_to_owner(msg):
     for owner_id in MAIN_OWNER:
         try:
             # Only send detailed logs privately, but only if the user is not the bot itself
-            if owner_id != client.get_me().id: 
+            me = await client.get_me()
+            if me and owner_id != me.id: 
                 await client.send_message(owner_id, f"🪵 {msg}")
         except:
             pass
@@ -363,12 +364,12 @@ async def show_typing(chat_id, duration):
 async def stop_bot_handler(event):
     global BOT_RUNNING
     sender = await event.get_sender()
+    if sender is None: return # FIX: Ignore if no sender
     if not is_owner(sender.id):
-        return # Silent fail for non-owners
+        return
     
     BOT_RUNNING = False
     await log_to_owner("🔴 Bot is stopping...")
-    # Stop the client after a short delay
     await asyncio.sleep(1)
     await client.disconnect()
 
@@ -376,12 +377,12 @@ async def stop_bot_handler(event):
 async def start_bot_handler(event):
     global BOT_RUNNING
     sender = await event.get_sender()
+    if sender is None: return # FIX: Ignore if no sender
     if not is_owner(sender.id):
-        return # Silent fail for non-owners
+        return
     
     if not BOT_RUNNING:
         BOT_RUNNING = True
-        # Restarting the client requires a full re-run, so we just log the status change.
         await log_to_owner("🟢 Bot status changed to RUNNING. (Requires manual restart if fully disconnected)")
     else:
         await log_to_owner("⚠️ Bot is already running.") 
@@ -392,8 +393,9 @@ async def start_bot_handler(event):
 @client.on(events.NewMessage(pattern=r"^/getid$"))
 async def get_id_handler(event):
     sender = await event.get_sender()
+    if sender is None: return # FIX: Ignore if no sender
     if not is_owner(sender.id):
-        return # Silent fail for non-owners
+        return
         
     chat_id = event.chat_id
     user_id = sender.id
@@ -402,14 +404,14 @@ async def get_id_handler(event):
     reply_text += f"💬 Chat ID: `{chat_id}`\n"
     reply_text += f"Current Chat Title: {event.chat.title if event.chat else 'Private Chat'}"
     
-    # Sends info only to owner's log
     await log_to_owner(f"✅ Get ID executed in chat {chat_id}:\n{reply_text}")
 
 @client.on(events.NewMessage(pattern=r"^/help$"))
 async def help_handler(event):
     sender = await event.get_sender()
+    if sender is None: return # FIX: Ignore if no sender
     if not is_owner(sender.id):
-        return # Silent fail for non-owners
+        return
         
     help_menu = """
 **🚀 Userbot Command Menu (Owner Only) 🚀**
@@ -442,7 +444,6 @@ async def help_handler(event):
 • **Start**: Reply with `ဟျောင့်ဝက်မကိုက်လေ` (or similar triggers) to a target message.
 • **Stop**: Reply with `သေလိုက်` to a target's message, or send it alone to clear all targets.
 """
-    # Sends help menu only to owner's log
     await log_to_owner(f"✅ Help command executed in chat {event.chat_id}.\n{help_menu}")
 
 # ----------------------------------------------------------------------
@@ -452,12 +453,15 @@ async def help_handler(event):
 @client.on(events.NewMessage(pattern=r"^/ကန်$"))
 async def enable_autodelete_reply(event):
     sender = await event.get_sender()
+    if sender is None: return # FIX: Ignore if no sender
     if not is_owner(sender.id):
-        return # Silent fail for non-owners
+        return
 
     if event.is_reply:
         reply_msg = await event.get_reply_message()
+        if reply_msg is None: return
         user_to_delete = await reply_msg.get_sender()
+        if user_to_delete is None: return
         
         chat_id = event.chat_id
         user_id = user_to_delete.id
@@ -469,14 +473,13 @@ async def enable_autodelete_reply(event):
         
         await log_to_owner(f"✅ [AutoDelete] Enabled for {user_id} in {chat_id} via /ကန်")
 
-    # Removed else reply for silent mode
-
 # Listener for /autodelete @user
 @client.on(events.NewMessage(pattern=r"^/autodelete\s+(@\w+|\d+)$"))
 async def enable_autodelete_mention(event):
     sender = await event.get_sender()
+    if sender is None: return # FIX: Ignore if no sender
     if not is_owner(sender.id):
-        return # Silent fail for non-owners
+        return
 
     match = re.match(r"^/autodelete\s+(@\w+|\d+)$", event.raw_text)
     user_identifier = match.group(1)
@@ -500,8 +503,9 @@ async def enable_autodelete_mention(event):
 @client.on(events.NewMessage(pattern=r"^/stopautodelete\s+(@\w+|\d+)$"))
 async def disable_autodelete_mention(event):
     sender = await event.get_sender()
+    if sender is None: return # FIX: Ignore if no sender
     if not is_owner(sender.id):
-        return # Silent fail for non-owners
+        return
 
     match = re.match(r"^/stopautodelete\s+(@\w+|\d+)$", event.raw_text)
     user_identifier = match.group(1)
@@ -528,8 +532,9 @@ async def disable_autodelete_mention(event):
 @client.on(events.NewMessage(pattern=r"^/stopautodelete$"))
 async def disable_autodelete_all(event):
     sender = await event.get_sender()
+    if sender is None: return # FIX: Ignore if no sender
     if not is_owner(sender.id):
-        return # Silent fail for non-owners
+        return
     
     chat_id = event.chat_id
     if chat_id in auto_deletes:
@@ -547,6 +552,8 @@ async def delete_target_message(event):
     chat_id = event.chat_id
     sender = await event.get_sender()
     
+    if sender is None: return # FIX: Ignore if no sender
+    
     if chat_id in auto_deletes and sender.id in auto_deletes[chat_id]:
         try:
             # Owners are immune to autodelete.
@@ -559,15 +566,15 @@ async def delete_target_message(event):
 # ----------------------------------------------------------------------
 # AUTO-MENTION COMMANDS
 # ----------------------------------------------------------------------
-# Helper to check if a user is being auto-mentioned in a specific chat
 def is_user_mentioning(chat_id, user_id):
     return chat_id in auto_mentions and user_id in auto_mentions[chat_id]
 
 @client.on(events.NewMessage(pattern=r"^/listmentions$"))
 async def list_mentions_handler(event):
     sender = await event.get_sender()
+    if sender is None: return # FIX: Ignore if no sender
     if not is_owner(sender.id):
-        return # Silent fail for non-owners
+        return
         
     chat_id = event.chat_id
     
@@ -581,15 +588,17 @@ async def list_mentions_handler(event):
 @client.on(events.NewMessage(pattern=r"^/stopmention$"))
 async def stop_mention_handler(event):
     sender = await event.get_sender()
+    if sender is None: return # FIX: Ignore if no sender
     if not is_owner(sender.id):
-        return # Silent fail for non-owners
+        return
 
     chat_id = event.chat_id
     
     if event.is_reply:
-        # Case 1: Stop mention for a specific user (reply)
         reply_msg = await event.get_reply_message()
+        if reply_msg is None: return
         user_to_stop = await reply_msg.get_sender()
+        if user_to_stop is None: return
         user_id = user_to_stop.id
 
         if is_user_mentioning(chat_id, user_id):
@@ -600,7 +609,6 @@ async def stop_mention_handler(event):
         else:
             await log_to_owner(f"⚠️ [AutoMention] User {user_id} is not currently being auto-mentioned here.")
     else:
-        # Case 2: Stop all mentions in the current chat
         if chat_id in auto_mentions and auto_mentions[chat_id]:
             del auto_mentions[chat_id]
             await log_to_owner(f"🚫 [AutoMention] ALL stopped in chat {chat_id} via /stopmention")
@@ -611,8 +619,9 @@ async def stop_mention_handler(event):
 @client.on(events.NewMessage(pattern=r"^/stopallmentions$"))
 async def stop_all_mentions_handler(event):
     sender = await event.get_sender()
+    if sender is None: return # FIX: Ignore if no sender
     if not is_owner(sender.id):
-        return # Silent fail for non-owners
+        return
 
     global auto_mentions
     if auto_mentions:
@@ -627,8 +636,9 @@ async def stop_all_mentions_handler(event):
 async def set_mention_interval_handler(event):
     global mention_delay
     sender = await event.get_sender()
+    if sender is None: return # FIX: Ignore if no sender
     if not is_owner(sender.id):
-        return # Silent fail for non-owners
+        return
     
     match = re.match(r"^/setmentioninterval\s+(\d+)$", event.raw_text)
     if match:
@@ -649,35 +659,39 @@ async def set_mention_interval_handler(event):
 async def add_target(event):
     if not BOT_RUNNING: return
     sender = await event.get_sender()
+    if sender is None: return # FIX: Ignore if no sender
     if not is_owner(sender.id):
-        return # Silent fail for non-owners
+        return
         
     if event.is_reply:
         reply_msg = await event.get_reply_message()
+        if reply_msg is None: return
         user = await reply_msg.get_sender()
+        if user is None: return
         chat_id = event.chat_id
         targets[user.id] = {"chat": chat_id, "last_msg": None, "last_replied": None}
         await log_to_owner(f"✅ [+] Auto Reply Started for {user.first_name} ({user.id}) in chat {chat_id}")
-    # Removed else reply for silent mode
 
 # ====== STOP AUTO REPLY (Original) ======
 @client.on(events.NewMessage(pattern=r"^သေလိုက်$"))
 async def stop_target(event):
     if not BOT_RUNNING: return
     sender = await event.get_sender()
+    if sender is None: return # FIX: Ignore if no sender
     if not is_owner(sender.id):
-        return # Silent fail for non-owners
+        return
         
     if event.is_reply:
         reply_msg = await event.get_reply_message()
+        if reply_msg is None: return
         user = await reply_msg.get_sender()
+        if user is None: return
         if user.id in targets:
             del targets[user.id]
             await log_to_owner(f"✅ [*] Stopped Auto Reply for {user.first_name} ({user.id})")
         else:
             await log_to_owner(f"⚠️ [*] User {user.id} not found in auto-reply targets.")
     else:
-        # Send alone to clear all targets
         targets.clear()
         await log_to_owner("✅ [*] All Auto Reply Targets Cleared")
 
@@ -686,6 +700,9 @@ async def stop_target(event):
 async def catch_target_message(event):
     if not BOT_RUNNING: return
     sender = await event.get_sender()
+    
+    if sender is None: return # FIX APPLIED HERE: Ignore if no sender
+
     # Ignore messages from owners
     if is_owner(sender.id):
         return
@@ -698,16 +715,20 @@ async def catch_target_message(event):
 async def add_auto_mention(event):
     if not BOT_RUNNING: return
     sender = await event.get_sender()
+    
+    if sender is None: return # FIX APPLIED HERE: Ignore if no sender
+    
     if not is_owner(sender.id):
-        return # Silent fail for non-owners
+        return
         
-    # Original trigger: "123 ဖာသည်မသား [nickname]" (on reply)
     if event.is_reply and event.raw_text.startswith("123 ဖာသည်မသား"):
         match = re.match(r"123 ဖာသည်မသား\s+(.+)", event.raw_text, re.DOTALL)
         if match:
             nickname = match.group(1).strip()
             reply_msg = await event.get_reply_message()
+            if reply_msg is None: return
             user = await reply_msg.get_sender()
+            if user is None: return
             chat_id = event.chat_id
             
             if chat_id not in auto_mentions:
@@ -722,12 +743,13 @@ async def add_auto_mention(event):
 async def stop_auto_mention_original(event):
     if not BOT_RUNNING: return
     sender = await event.get_sender()
+    if sender is None: return # FIX: Ignore if no sender
     if not is_owner(sender.id):
-        return # Silent fail for non-owners
+        return
         
     chat_id = event.chat_id
     if chat_id in auto_mentions and auto_mentions[chat_id]:
-        del auto_mentions[chat_id] # Clear the whole chat entry
+        del auto_mentions[chat_id] 
         await log_to_owner(f"✅ [x] Auto Mention stopped in chat {chat_id} (Original command)")
     else:
         await log_to_owner(f"⚠️ [AutoMention] No active mentions found in chat {chat_id}.")
@@ -737,8 +759,9 @@ async def stop_auto_mention_original(event):
 async def set_mention_delay_original(event):
     global mention_delay
     sender = await event.get_sender()
+    if sender is None: return # FIX: Ignore if no sender
     if not is_owner(sender.id):
-        return # Silent fail for non-owners
+        return
         
     match = re.match(r"^/setsecmention (\d+)$", event.raw_text)
     if match:
@@ -750,7 +773,7 @@ async def set_mention_delay_original(event):
             await log_to_owner("⚠️ [AutoMention] Interval must be between 5 and 3600 seconds. Not changed.")
 
 # ----------------------------------------------------------------------
-# LOOP FUNCTIONS (No change needed here)
+# LOOP FUNCTIONS
 # ----------------------------------------------------------------------
 
 # ====== AUTO REPLY LOOP ======
@@ -765,7 +788,6 @@ async def auto_reply_loop():
             for uid, data in list(targets.items()):
                 if data["last_msg"] and (data["last_replied"] != data["last_msg"].id):
                     
-                    # 1. Show Typing
                     asyncio.create_task(show_typing(data["chat"], 5))
                     
                     if auto_replies:
@@ -774,7 +796,6 @@ async def auto_reply_loop():
                     else:
                         reply_text = "🤖 Auto reply active!"
                         
-                    # 2. Send Reply
                     try:
                         await client.send_message(data["chat"], reply_text, reply_to=data["last_msg"].id)
                         data["last_replied"] = data["last_msg"].id
@@ -801,7 +822,6 @@ async def mention_loop():
                     del auto_mentions[chat_id]
                     continue
 
-                # 1. Show Typing
                 asyncio.create_task(show_typing(chat_id, 5))
 
                 lines = []
@@ -824,7 +844,6 @@ async def mention_loop():
 
                 text = "\n\n".join(lines)
                 
-                # 2. Send Mention Message
                 try:
                     await client.send_message(chat_id, text, parse_mode="markdown")
                 except Exception as send_e:
@@ -837,7 +856,7 @@ async def mention_loop():
             await asyncio.sleep(5)
 
 # ----------------------------------------------------------------------
-# FLASK KEEP ALIVE & MAIN EXECUTION (Updated for PORT environment variable)
+# FLASK KEEP ALIVE & MAIN EXECUTION
 # ----------------------------------------------------------------------
 app = Flask('')
 
@@ -848,6 +867,7 @@ def home():
 def run_web():
     # Use environment variable PORT or default to 5000 for cloud platforms
     port = int(os.environ.get("PORT", 5000))
+    # Note: Telethon is sensitive to multiple clients running; ensuring the app runs on 0.0.0.0 is crucial.
     app.run(host='0.0.0.0', port=port)
 
 Thread(target=run_web).start()
