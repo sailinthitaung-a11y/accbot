@@ -9,7 +9,6 @@ from telethon.sessions import StringSession
 from telethon.utils import get_display_name
 from flask import Flask
 from pymongo import MongoClient
-# ConnectionError အစား ServerSelectionTimeoutError ကို သုံးလိုက်သည်
 from pymongo.errors import OperationFailure, ServerSelectionTimeoutError 
 
 # ==============================================================================
@@ -22,14 +21,17 @@ logging.basicConfig(format='[%(levelname) 5s/%(asctime)s] %(name)s: %(message)s'
 
 # --- Hardcoded Credentials (Replace with your actual data!) ---
 # ⚠️ REPLACE THESE WITH YOUR REAL VALUES!
-API_ID = 21308016     # <-- ဤနေရာတွင် သင့် API ID အမှန်ကို ထည့်ပါ
-API_HASH = "9a483e059bcb0904e9f367418076091e"    # <-- ဤနေရာတွင် သင့် API HASH အမှန်ကို ထည့်ပါ
+# API ID နှင့် API HASH ကို my.telegram.org မှ ရယူပါ
+API_ID = 21308016     
+API_HASH = "9a483e059bcb0904e9f367418076091e"    
 # OWNER ID တစ်ခုတည်းကိုသာ ထားရှိရပါမည် (Integer)
-OWNER_ID = 7781882070    # <-- ဤနေရာတွင် သင့် OWNER ID အမှန်ကို ထည့်ပါ 
+OWNER_ID = 7781882070    
+# MongoDB Connection String
 MONGO_URI = "mongodb+srv://sailinthitaung_db_user:ZBEIl2SKHMFr8RPw@accbot.lidtexj.mongodb.net/?retryWrites=true&w=majority&appName=accbot"
 
 # --- Environment Variable Fallbacks (for Render URL/Session) ---
-SESSION_STRING = os.environ.get("BOT_SESSION", None)
+# Environment Variable မှ SESSION_STRING ကို ယူသည်
+SESSION_STRING = os.environ.get("BOT_SESSION", None) 
 RENDER_URL = os.environ.get("RENDER_URL", "http://localhost:5000")
 
 # --- Database Setup (MongoDB) ---
@@ -44,7 +46,6 @@ try:
     admin_collection = db["admin_users"] 
     
     logging.warning("✅ MongoDB Connection Successful.")
-# ConnectionError အစား ServerSelectionTimeoutError ကို သုံးသည်
 except ServerSelectionTimeoutError: 
     logging.error("❌ MongoDB Connection Failed. Check MONGO_URI and network access.")
     exit(1)
@@ -61,10 +62,18 @@ ADMIN_IDS = set()
 MENTION_INTERVAL = 300
 IS_BOT_RUNNING = True
 
-# --- Telethon Client Setup ---
+# --- Telethon Client Setup (BOT_SESSION ERROR FIX) ---
 if SESSION_STRING:
-    client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
+    # BOT_SESSION string အား မှန်ကန်ကြောင်း သေချာမှ StringSession ကို သုံးရန်
+    # StringSession() သည် တရားဝင် string မဟုတ်ပါက ValueError ဖြစ်သည်
+    try:
+        client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
+    except ValueError:
+        logging.error("❌ BOT_SESSION is invalid or corrupted. Starting with a new session file.")
+        client = TelegramClient("userbot_session", API_ID, API_HASH)
+        SESSION_STRING = None # အောက်က main() မှာ session အသစ်ထုတ်ဖို့ ပြန်သတ်မှတ်
 else:
+    # BOT_SESSION မရှိပါက userbot_session.session ကို သုံးရန်
     client = TelegramClient("userbot_session", API_ID, API_HASH)
 
 # ==============================================================================
@@ -78,7 +87,6 @@ def load_data_from_db():
     # Load Admin IDs 
     try:
         admin_data = admin_collection.find()
-        # Ensure IDs are integers for proper comparison
         ADMIN_IDS = {doc['user_id'] for doc in admin_data}
         logging.warning(f"👑 Loaded {len(ADMIN_IDS)} admin IDs.")
     except Exception as e:
@@ -167,11 +175,11 @@ COMMAND_MENU = """
 **ADMIN/OWNER ONLY:**
 • `/getid` - (Common)
 • `/help` - (Common)
-• `\.addreply [trigger] \| [reply]` - Auto-Reply အသစ် ထည့်/ပြင်ရန်။
-• `\.delreply [trigger]` - Auto-Reply ဖျက်ရန်။
-• `\.listreplies` - Auto-Reply စာရင်းကြည့်ရန်။
-• **AUTO-DELETE** commands.
-• **AUTO-MENTION** commands.
+• `.addreply [trigger] | [reply]` - Auto-Reply အသစ် ထည့်/ပြင်ရန်။ (Syntax Warning ပြေလည်ရန် '\.' ကို ဖယ်လိုက်သည်)
+• `.delreply [trigger]` - Auto-Reply ဖျက်ရန်။
+• `.listreplies` - Auto-Reply စာရင်းကြည့်ရန်။
+• **AUTO-DELETE** commands: `.autodelete @user` / `.ကန်`
+• **AUTO-MENTION** commands: `.setmentioninterval` / `.stopmention`
 
 **COMMON (Everyone):**
 • `/getid` - သင့်ရဲ့ User ID နှင့် Chat ID ကို ရယူရန်။
@@ -248,11 +256,11 @@ async def remove_admin_handler(event):
 
 # --- COMMON Commands (Everyone/Admin) ---
 
-@client.on(events.NewMessage(pattern=r'\.help|\/help', outgoing=True)) # outgoing=True ထည့်ထားသည်
+@client.on(events.NewMessage(pattern=r'\.help|\/help', outgoing=True)) 
 async def help_handler(event):
     await event.edit(COMMAND_MENU)
 
-@client.on(events.NewMessage(pattern=r'\.getid|\/getid', outgoing=True)) # outgoing=True ထည့်ထားသည်
+@client.on(events.NewMessage(pattern=r'\.getid|\/getid', outgoing=True)) 
 async def getid_handler(event):
     user_id = event.sender_id
     chat_id = event.chat_id
@@ -275,7 +283,7 @@ async def getid_handler(event):
 @client.on(events.NewMessage(pattern=r'\.stopbot|\/stopbot', outgoing=True))
 async def stopbot_handler(event):
     global IS_BOT_RUNNING
-    if not is_owner(event): return # Only Owner can stop the entire bot
+    if not is_owner(event): return 
     
     IS_BOT_RUNNING = False
     save_global_data_to_db()
@@ -285,7 +293,7 @@ async def stopbot_handler(event):
 @client.on(events.NewMessage(pattern=r'\.startbot|\/startbot', outgoing=True))
 async def startbot_handler(event):
     global IS_BOT_RUNNING
-    if not is_owner(event): return # Only Owner can start the entire bot
+    if not is_owner(event): return 
     
     IS_BOT_RUNNING = True
     save_global_data_to_db()
@@ -293,7 +301,6 @@ async def startbot_handler(event):
     logging.warning("Bot activities resumed.")
 
 # --- PERSISTENT AUTO-REPLY COMMANDS (Admin/Owner) ---
-# **ယခု Commands များသည် is_admin_or_owner ဖြင့် စစ်ဆေးထားသည်**
 
 @client.on(events.NewMessage(pattern=r'\.addreply (.*) \| (.*)', outgoing=True))
 async def add_reply_handler(event):
@@ -599,8 +606,10 @@ def keep_alive():
     """Periodically pings the RENDER_URL to prevent sleep."""
     while True:
         try:
-            requests.get(RENDER_URL, timeout=10)
-            logging.warning("✅ Pinged self to stay alive")
+            # Check if RENDER_URL is actually set to prevent unnecessary errors
+            if RENDER_URL and RENDER_URL != "http://localhost:5000":
+                requests.get(RENDER_URL, timeout=10)
+                logging.warning("✅ Pinged self to stay alive")
         except requests.exceptions.RequestException as e:
             logging.error(f"❌ Ping failed: {e}")
         time.sleep(300)
@@ -625,11 +634,19 @@ async def main():
     
     await client.start()
 
+    # Session String မရှိသေးပါက အသစ် ထုတ်ပေးရန်
+    global SESSION_STRING # global SESSION_STRING ကို ပြန်စစ်ဆေးသည်
     if not SESSION_STRING:
         session_string = client.session.save()
+        
         # OWNER_ID သည် Integer တစ်ခုတည်းသာဖြစ်၍ တိုက်ရိုက် ပို့နိုင်သည်
-        await client.send_message(OWNER_ID, f"⚠️ **New Session String Generated!**\n\n`{session_string}`\n\n**Please save this string and update the `BOT_SESSION` Environment Variable for future restarts!**")
-        logging.warning(f"--- NEW SESSION STRING ---\n{session_string}\n--------------------------")
+        try:
+            await client.send_message(OWNER_ID, f"⚠️ **New Session String Generated!**\n\n`{session_string}`\n\n**Please save this string and update the `BOT_SESSION` Environment Variable for future restarts!**")
+            logging.warning(f"--- NEW SESSION STRING ---\n{session_string}\n--------------------------")
+        except Exception as e:
+            logging.error(f"Failed to send session string to OWNER_ID: {e}")
+            
+        SESSION_STRING = session_string # အသစ်ထုတ်လိုက်တဲ့ session ကို သိမ်းထားပါ
 
     # Background Mention Task ကို စတင်
     asyncio.create_task(background_mention_task())
